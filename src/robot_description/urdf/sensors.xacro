@@ -1,0 +1,388 @@
+<?xml version="1.0"?>
+<!-- ============================================================
+     传感器 xacro: 3D激光雷达 + 深度相机 + IMU
+     sensors.xacro
+     
+     支持的雷达型号 (通过 lidar_type 参数选择):
+       velodyne_vlp16  : Velodyne VLP-16 (16线)
+       velodyne_hdl32  : Velodyne HDL-32 (32线)
+       livox_mid360    : Livox Mid-360 (非重复扫描)
+       generic         : 通用3D激光雷达参数
+     
+     被 robot.urdf.xacro 引用
+     ============================================================ -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ============================================================
+       3D激光雷达
+       ============================================================ -->
+
+  <!-- 雷达支架link -->
+  <link name="lidar_mount_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <!-- 【TODO】根据实际支架尺寸调整 -->
+        <cylinder radius="0.02" length="0.08"/>
+      </geometry>
+      <material name="dark_gray"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.02" length="0.08"/>
+      </geometry>
+    </collision>
+    <xacro:cylinder_inertia m="0.05" r="0.02" h="0.08"/>
+  </link>
+
+  <joint name="lidar_mount_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="lidar_mount_link"/>
+    <!-- 支架安装在底盘前部顶面 
+         【TODO】x/y偏移根据实际安装调整 -->
+    <origin xyz="${lidar_x} ${lidar_y} ${chassis_height/2 + 0.04}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- 雷达主体link -->
+  <link name="lidar_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${lidar_radius}" length="${lidar_height}"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${lidar_radius}" length="${lidar_height}"/>
+      </geometry>
+    </collision>
+    <xacro:cylinder_inertia m="${lidar_mass}" r="${lidar_radius}" h="${lidar_height}"/>
+  </link>
+
+  <joint name="lidar_joint" type="fixed">
+    <parent link="lidar_mount_link"/>
+    <child  link="lidar_link"/>
+    <!-- Z偏移 = 支架高度/2 + 雷达高度/2 -->
+    <origin xyz="0 0 ${0.04 + lidar_height/2}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Gazebo 3D激光雷达传感器插件 -->
+  <gazebo reference="lidar_link">
+    <sensor type="ray" name="lidar_sensor">
+      <!-- 【TODO】根据实际雷达型号修改以下参数: -->
+      <pose>0 0 0 0 0 0</pose>
+      <visualize>false</visualize>
+      <!-- 发布频率(Hz) 
+           VLP-16: 10~20Hz  HDL-32: 10~20Hz  Mid-360: 10Hz
+           【TODO】根据实际雷达设置 -->
+      <update_rate>10</update_rate>
+
+      <ray>
+        <scan>
+          <!-- 水平扫描: 360度, 采样点数
+               VLP-16: 1800点(0.2°分辨率) / HDL-32: 2160点
+               【TODO】horizontal_samples根据型号调整 -->
+          <horizontal>
+            <samples>1800</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159265</min_angle>
+            <max_angle>3.14159265</max_angle>
+          </horizontal>
+
+          <!-- 垂直扫描(线束)
+               VLP-16: 16线, ±15° → min=-0.2618 max=0.2618
+               HDL-32: 32线, -30.67°~+10.67° 
+               Mid-360: 使用point_cloud类型, 此处为近似
+               【TODO】根据型号修改 samples/min_angle/max_angle -->
+          <vertical>
+            <samples>16</samples>
+            <resolution>1</resolution>
+            <!-- VLP-16: ±15° = ±0.2618 rad -->
+            <min_angle>-0.2617993878</min_angle>
+            <max_angle>0.2617993878</max_angle>
+          </vertical>
+        </scan>
+
+        <range>
+          <!-- 最小量程(m): 一般0.1~0.5m
+               【TODO】根据型号填写 -->
+          <min>0.1</min>
+          <!-- 最大量程(m): VLP-16:100m HDL-32:100m Mid-360:40m
+               【TODO】根据型号填写 -->
+          <max>100.0</max>
+          <!-- 测量分辨率(m) -->
+          <resolution>0.01</resolution>
+        </range>
+
+        <noise>
+          <type>gaussian</type>
+          <!-- 高斯噪声标准差(m)
+               【TODO】根据雷达规格书填写, 典型值0.01~0.03m -->
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </ray>
+
+      <plugin name="gazebo_ros_lidar_controller"
+              filename="libgazebo_ros_ray_sensor.so">
+        <!-- 发布话题名称 -->
+        <ros>
+          <remapping>~/out:=/lidar/points</remapping>
+        </ros>
+        <!-- 输出格式: sensor_msgs/PointCloud2 -->
+        <output_type>sensor_msgs/PointCloud2</output_type>
+        <!-- 点云坐标系 -->
+        <frame_name>lidar_link</frame_name>
+      </plugin>
+
+    </sensor>
+    <material>Gazebo/DarkGray</material>
+  </gazebo>
+
+
+  <!-- ============================================================
+       深度相机 (RGB-D)
+       支持 RealSense D435/D455 风格的配置
+       ============================================================ -->
+
+  <!-- 相机支架link -->
+  <link name="camera_mount_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <!-- 【TODO】根据实际支架尺寸调整 -->
+        <box size="0.02 0.04 0.15"/>
+      </geometry>
+      <material name="dark_gray"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.02 0.04 0.15"/>
+      </geometry>
+    </collision>
+    <xacro:box_inertia m="0.05" dx="0.02" dy="0.04" dz="0.15"/>
+  </link>
+
+  <joint name="camera_mount_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="camera_mount_link"/>
+    <!-- 相机支架安装在底盘前部
+         【TODO】x/y偏移和z高度根据实际安装调整 -->
+    <origin xyz="${camera_x - 0.01} ${camera_y} ${chassis_height/2 + 0.075}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- 相机主体link (RGB部分中心为光学原点) -->
+  <link name="camera_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${camera_size_x} ${camera_size_y} ${camera_size_z}"/>
+      </geometry>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${camera_size_x} ${camera_size_y} ${camera_size_z}"/>
+      </geometry>
+    </collision>
+    <xacro:box_inertia m="${camera_mass}"
+                       dx="${camera_size_x}"
+                       dy="${camera_size_y}"
+                       dz="${camera_size_z}"/>
+  </link>
+
+  <joint name="camera_joint" type="fixed">
+    <parent link="camera_mount_link"/>
+    <child  link="camera_link"/>
+    <!-- 相机固定在支架顶部
+         【TODO】根据实际相机安装高度和水平位置调整 -->
+    <origin xyz="${camera_size_x/2} 0 ${0.075}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ROS标准: 相机光学坐标系
+       (Z轴向前, X轴向右, Y轴向下) vs
+       ROS坐标系 (X向前, Y向左, Z向上)
+       需要一个固定旋转关节做转换 -->
+  <link name="camera_optical_link"/>
+
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child  link="camera_optical_link"/>
+    <!-- 旋转: 将ROS坐标系转换为光学坐标系
+         绕X轴 -90°, 再绕Z轴 -90° -->
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+
+  <!-- Gazebo 深度相机传感器插件 -->
+  <gazebo reference="camera_link">
+    <sensor type="depth" name="depth_camera_sensor">
+      <pose>0 0 0 0 0 0</pose>
+      <visualize>false</visualize>
+      <!-- 【TODO】根据实际相机帧率设置(RealSense D435最高90fps, 深度流通常30fps) -->
+      <update_rate>30</update_rate>
+
+      <camera name="depth_camera">
+        <!-- 水平视场角(rad)
+             RealSense D435: 86° ≈ 1.5010 rad
+             RealSense D455: 87° ≈ 1.5184 rad
+             【TODO】根据型号填写 -->
+        <horizontal_fov>1.5010</horizontal_fov>
+
+        <image>
+          <!-- 图像分辨率
+               【TODO】根据实际配置填写
+               D435深度: 最高1280x720, 常用640x480 -->
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+
+        <clip>
+          <!-- 相机近平面/远平面(m)
+               RealSense D435: 0.1~10m
+               【TODO】根据型号填写 -->
+          <near>0.1</near>
+          <far>10.0</far>
+        </clip>
+
+        <noise>
+          <type>gaussian</type>
+          <!-- 深度噪声
+               【TODO】典型值0.01m -->
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </camera>
+
+      <plugin name="gazebo_ros_depth_camera_controller"
+              filename="libgazebo_ros_camera.so">
+        <ros>
+          <remapping>~/image_raw:=/camera/color/image_raw</remapping>
+          <remapping>~/depth/image_raw:=/camera/depth/image_rect_raw</remapping>
+          <remapping>~/points:=/camera/depth/color/points</remapping>
+          <remapping>~/camera_info:=/camera/color/camera_info</remapping>
+          <remapping>~/depth/camera_info:=/camera/depth/camera_info</remapping>
+        </ros>
+        <camera_name>depth_camera</camera_name>
+        <frame_name>camera_optical_link</frame_name>
+        <!-- 是否发布彩色点云 -->
+        <hack_baseline>0.07</hack_baseline>
+      </plugin>
+
+    </sensor>
+    <material>Gazebo/Blue</material>
+  </gazebo>
+
+
+  <!-- ============================================================
+       IMU (惯性测量单元)
+       用于LIO-SAM等紧耦合SLAM算法
+       ============================================================ -->
+  <link name="imu_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.03 0.03 0.01"/>
+      </geometry>
+      <material name="green"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.03 0.03 0.01"/>
+      </geometry>
+    </collision>
+    <xacro:box_inertia m="${imu_mass}" dx="0.03" dy="0.03" dz="0.01"/>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="imu_link"/>
+    <origin xyz="${imu_x} ${imu_y} ${imu_z}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Gazebo IMU传感器插件 -->
+  <gazebo reference="imu_link">
+    <sensor name="imu_sensor" type="imu">
+      <always_on>true</always_on>
+      <!-- 【TODO】IMU更新频率, 通常100~400Hz
+           LIO-SAM建议: 200Hz以上 -->
+      <update_rate>200</update_rate>
+      <visualize>false</visualize>
+
+      <imu>
+        <angular_velocity>
+          <x>
+            <!-- 陀螺仪噪声(rad/s/sqrt(Hz))
+                 【TODO】根据IMU规格书填写 -->
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.0004</stddev>
+              <bias_mean>0.0</bias_mean>
+              <bias_stddev>0.0001</bias_stddev>
+            </noise>
+          </x>
+          <y>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.0004</stddev>
+              <bias_mean>0.0</bias_mean>
+              <bias_stddev>0.0001</bias_stddev>
+            </noise>
+          </y>
+          <z>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.0004</stddev>
+              <bias_mean>0.0</bias_mean>
+              <bias_stddev>0.0001</bias_stddev>
+            </noise>
+          </z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x>
+            <!-- 加速度计噪声(m/s^2/sqrt(Hz))
+                 【TODO】根据IMU规格书填写 -->
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.0036</stddev>
+              <bias_mean>0.1</bias_mean>
+              <bias_stddev>0.001</bias_stddev>
+            </noise>
+          </x>
+          <y>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.0036</stddev>
+              <bias_mean>0.1</bias_mean>
+              <bias_stddev>0.001</bias_stddev>
+            </noise>
+          </y>
+          <z>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.0036</stddev>
+              <bias_mean>0.1</bias_mean>
+              <bias_stddev>0.001</bias_stddev>
+            </noise>
+          </z>
+        </linear_acceleration>
+      </imu>
+
+      <plugin name="gazebo_ros_imu_controller"
+              filename="libgazebo_ros_imu_sensor.so">
+        <ros>
+          <remapping>~/out:=/imu/data</remapping>
+        </ros>
+        <initial_orientation_as_reference>false</initial_orientation_as_reference>
+        <frame_name>imu_link</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+</robot>

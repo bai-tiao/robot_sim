@@ -1,0 +1,277 @@
+# =============================================================
+# Nav2 参数配置文件
+# nav2_params.yaml
+#
+# 定位: FAST-LIO2 (外部提供 map->odom->base_link TF)
+# 全局规划: NavFn (A*)   【TODO】换 smac_planner 见下方注释
+# 局部规划: DWB           【TODO】换 nav2_mppi_controller 见下方注释
+# =============================================================
+
+# ── AMCL (不使用, 定位由 FAST-LIO2 负责) ─────────────────────
+# 若切换到 AMCL 定位, 取消注释并配置
+# amcl:
+#   ros__parameters:
+#     ...
+
+# ── BT Navigator ──────────────────────────────────────────────
+bt_navigator:
+  ros__parameters:
+    use_sim_time: true
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: /odom
+    # 行为树XML文件路径, 默认使用 nav2_bt_navigator 包内置的
+    # 【TODO】若需自定义行为树逻辑则修改此路径
+    default_nav_to_pose_bt_xml: ""
+    default_nav_through_poses_bt_xml: ""
+    plugin_lib_names:
+      - nav2_compute_path_to_pose_action_bt_node
+      - nav2_follow_path_action_bt_node
+      - nav2_back_up_action_bt_node
+      - nav2_spin_action_bt_node
+      - nav2_wait_action_bt_node
+      - nav2_clear_costmap_service_bt_node
+      - nav2_is_stuck_condition_bt_node
+      - nav2_goal_reached_condition_bt_node
+      - nav2_goal_updated_condition_bt_node
+      - nav2_initial_pose_received_condition_bt_node
+      - nav2_reinitialize_global_localization_service_bt_node
+      - nav2_rate_controller_bt_node
+      - nav2_distance_controller_bt_node
+      - nav2_speed_controller_bt_node
+      - nav2_truncate_path_action_bt_node
+      - nav2_goal_updater_node_bt_node
+      - nav2_recovery_node_bt_node
+      - nav2_pipeline_sequence_bt_node
+      - nav2_round_robin_node_bt_node
+      - nav2_transform_available_condition_bt_node
+      - nav2_time_expired_condition_bt_node
+      - nav2_path_expiring_timer_condition
+      - nav2_distance_traveled_condition_bt_node
+      - nav2_single_trigger_bt_node
+      - nav2_is_battery_low_condition_bt_node
+      - nav2_navigate_through_poses_action_bt_node
+      - nav2_navigate_to_pose_action_bt_node
+      - nav2_remove_passed_goals_action_bt_node
+      - nav2_planner_selector_bt_node
+      - nav2_controller_selector_bt_node
+      - nav2_goal_checker_selector_bt_node
+
+# ── 全局规划器: NavFn (A*) ─────────────────────────────────────
+planner_server:
+  ros__parameters:
+    use_sim_time: true
+    expected_planner_frequency: 1.0
+    planner_plugins: ["GridBased"]
+
+    GridBased:
+      plugin: "nav2_navfn_planner/NavfnPlanner"
+      # A* 模式 (false = Dijkstra)
+      use_astar: true
+      # 是否允许在未知区域规划
+      allow_unknown: true
+      # 终点容忍半径 (m) 【TODO】根据机器人尺寸调整
+      tolerance: 0.5
+
+    # ── 【TODO】切换为 Smac Hybrid-A* ───────────────────────────
+    # planner_plugins: ["GridBased"]
+    # GridBased:
+    #   plugin: "nav2_smac_planner/SmacPlannerHybrid"
+    #   downsample_costmap: false
+    #   downsampling_factor: 1
+    #   tolerance: 0.5
+    #   allow_unknown: true
+    #   max_iterations: 1000000
+    #   max_on_approach_iterations: 1000
+    #   max_planning_time: 5.0
+    #   motion_model_for_search: "REEDS_SHEPP"
+    #   angle_quantization_bins: 72
+    #   analytic_expansion_ratio: 3.5
+    #   minimum_turning_radius: 0.40  # 【TODO】根据实际小车最小转弯半径填写 (m)
+
+# ── 局部规划器: DWB ───────────────────────────────────────────
+controller_server:
+  ros__parameters:
+    use_sim_time: true
+    controller_frequency: 20.0
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.5
+    min_theta_velocity_threshold: 0.001
+    controller_plugins: ["FollowPath"]
+
+    # 速度/加速度限制 【TODO】根据实际电机参数填写
+    FollowPath:
+      plugin: "dwb_core::DWBLocalPlanner"
+      debug_trajectory_details: false
+      # 最小/最大线速度 (m/s)
+      min_vel_x: 0.0
+      max_vel_x: 0.5        # 【TODO】填入实际最大线速度
+      min_vel_y: 0.0
+      max_vel_y: 0.0        # 差速小车: 固定为 0
+      # 最大线加速度 (m/s^2)
+      acc_lim_x: 2.5        # 【TODO】根据电机加速能力填写
+      decel_lim_x: -2.5
+      acc_lim_y: 0.0
+      decel_lim_y: 0.0
+      # 角速度限制 (rad/s)
+      max_vel_theta: 1.0    # 【TODO】填入实际最大角速度
+      min_vel_theta: -1.0
+      # 角加速度 (rad/s^2)
+      acc_lim_theta: 3.2    # 【TODO】根据实际填写
+      decel_lim_theta: -3.2
+      # 前进预测时间 (s)
+      sim_time: 1.7
+      # 采样粒度
+      linear_granularity: 0.05
+      angular_granularity: 0.025
+      vx_samples: 20
+      vy_samples: 5
+      vtheta_samples: 20
+      # 轮廓膨胀
+      transform_tolerance: 0.2
+      short_circuit_trajectory_eval: true
+      stateful: true
+      critics: ["RotateToGoal", "Oscillation", "BaseObstacle",
+                "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
+      BaseObstacle.scale: 0.02
+      PathAlign.scale: 32.0
+      PathAlign.forward_point_distance: 0.1
+      GoalAlign.scale: 24.0
+      GoalAlign.forward_point_distance: 0.1
+      PathDist.scale: 32.0
+      GoalDist.scale: 24.0
+      RotateToGoal.scale: 32.0
+      RotateToGoal.slowing_factor: 5.0
+      RotateToGoal.lookahead_time: -1.0
+
+    # ── 【TODO】切换为 MPPI 控制器 ─────────────────────────────
+    # FollowPath:
+    #   plugin: "nav2_mppi_controller::MPPIController"
+    #   time_steps: 56
+    #   model_dt: 0.05
+    #   batch_size: 2000
+    #   vx_std: 0.2
+    #   vy_std: 0.0
+    #   wz_std: 0.4
+    #   vx_max: 0.5       # 【TODO】同上, 填入最大线速度
+    #   vx_min: -0.35
+    #   vy_max: 0.0
+    #   wz_max: 1.9
+    #   ax_max: 3.0
+    #   ax_min: -3.0
+    #   az_max: 3.5
+
+# ── 代价地图 ─────────────────────────────────────────────────
+# 全局代价地图
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: true
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      # 机器人半径 (m): 用于圆形近似
+      # 【TODO】设置为实际外轮廓最大半径 (或使用 footprint)
+      robot_radius: 0.30
+      resolution: 0.05
+      track_unknown_space: true
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        # 订阅激光雷达点云 (2D投影或scan话题)
+        # 【TODO】若使用 2D scan 则改为 sensor_msgs/LaserScan
+        observation_sources: scan
+        scan:
+          topic: /lidar/points   # FAST-LIO2 输出的点云
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "PointCloud2"
+          raytrace_max_range: 20.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 15.0
+          obstacle_min_range: 0.0
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        # 膨胀半径 (m): 建议 >= robot_radius + 安全裕量
+        # 【TODO】根据实际障碍场景调整
+        inflation_radius: 0.55
+        cost_scaling_factor: 3.5
+      always_send_full_costmap: true
+
+# 局部代价地图
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: true
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom
+      robot_base_frame: base_link
+      rolling_window: true
+      # 局部代价地图窗口大小 (m) 【TODO】根据场景调整
+      width: 6
+      height: 6
+      resolution: 0.05
+      robot_radius: 0.30      # 【TODO】同全局代价地图
+      plugins: ["voxel_layer", "inflation_layer"]
+      voxel_layer:
+        plugin: "nav2_costmap_2d::VoxelLayer"
+        enabled: true
+        publish_voxel_map: true
+        origin_z: 0.0
+        z_resolution: 0.05
+        z_voxels: 16
+        max_obstacle_height: 2.0
+        mark_threshold: 0
+        observation_sources: scan
+        scan:
+          topic: /lidar/points
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "PointCloud2"
+          raytrace_max_range: 5.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 4.5
+          obstacle_min_range: 0.0
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.55  # 【TODO】同全局代价地图
+        cost_scaling_factor: 3.5
+      always_send_full_costmap: true
+
+# ── 恢复行为 ─────────────────────────────────────────────────
+recoveries_server:
+  ros__parameters:
+    use_sim_time: true
+    costmap_topic: local_costmap/costmap_raw
+    footprint_topic: local_costmap/published_footprint
+    cycle_frequency: 10.0
+    recovery_plugins: ["spin", "back_up", "wait"]
+    spin:
+      plugin: "nav2_recoveries/Spin"
+    back_up:
+      plugin: "nav2_recoveries/BackUp"
+    wait:
+      plugin: "nav2_recoveries/Wait"
+    # 最大旋转速度 (rad/s) 【TODO】根据实际最大角速度填写
+    max_rotational_vel: 1.0
+    min_rotational_vel: 0.4
+    rotational_acc_lim: 3.2
+
+# ── Lifecycle Manager ─────────────────────────────────────────
+lifecycle_manager:
+  ros__parameters:
+    use_sim_time: true
+    autostart: true
+    node_names:
+      - "planner_server"
+      - "controller_server"
+      - "recoveries_server"
+      - "bt_navigator"

@@ -1,0 +1,87 @@
+<?xml version="1.0"?>
+<!-- ============================================================
+     差速驱动 Gazebo 插件配置
+     gazebo_control.xacro
+     
+     包含:
+       - diff_drive 差速控制插件 (接收 /cmd_vel, 发布 /odom)
+       - joint_state_publisher 关节状态发布
+     
+     被 robot.urdf.xacro 引用
+     ============================================================ -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- =====================================
+       差速驱动控制插件
+       libgazebo_ros_diff_drive.so
+       ===================================== -->
+  <gazebo>
+    <plugin name="diff_drive_controller"
+            filename="libgazebo_ros_diff_drive.so">
+
+      <ros>
+        <!-- 命名空间: 若有多机器人则设置不同命名空间
+             【TODO】多机器人场景下修改 namespace -->
+        <!-- <namespace>/robot1</namespace> -->
+        <remapping>cmd_vel:=/cmd_vel</remapping>
+        <remapping>odom:=/odom</remapping>
+      </ros>
+
+      <!-- 左右驱动轮关节名称 (必须与URDF中joint name一致) -->
+      <left_joint>left_wheel_joint</left_joint>
+      <right_joint>right_wheel_joint</right_joint>
+
+      <!-- 轮子半径(m) 【TODO】与 robot_params.xacro 中 wheel_radius 保持一致 -->
+      <wheel_radius>0.085</wheel_radius>
+
+      <!-- 轮距(m): 左右轮中心间距 = 2 * wheel_y_offset
+           【TODO】根据实际轮距修改
+                   wheel_separation = 2 * wheel_y_offset = 2 * 0.225 = 0.45
+                   注意: 这是左右轮接地点之间的距离 -->
+      <wheel_separation>0.45</wheel_separation>
+
+      <!-- 最大线速度(m/s) 【TODO】根据电机最大转速和轮径计算 -->
+      <max_wheel_torque>20.0</max_wheel_torque>
+
+      <!-- 最大角加速度(rad/s^2) -->
+      <max_wheel_acceleration>1.0</max_wheel_acceleration>
+
+      <!-- 里程计发布配置 -->
+      <odometry_frame>odom</odometry_frame>
+      <robot_base_frame>base_footprint</robot_base_frame>
+
+      <!-- 是否发布 odom -> base_footprint 的TF变换
+           【TODO】若使用外部定位(如SLAM)则设为false, 避免TF冲突 -->
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>true</publish_odom_tf>
+      <publish_wheel_tf>true</publish_wheel_tf>
+
+      <!-- 里程计协方差
+           【TODO】根据实际里程计精度调整
+           格式: [x,y,z, rx,ry,rz] 对角元素 -->
+      <!-- <covariance_x>0.0001</covariance_x>
+           <covariance_y>0.0001</covariance_y>
+           <covariance_yaw>0.01</covariance_yaw> -->
+
+    </plugin>
+  </gazebo>
+
+  <!-- =====================================
+       关节状态发布器插件
+       发布所有关节的位置/速度到 /joint_states
+       ===================================== -->
+  <gazebo>
+    <plugin name="joint_state_publisher"
+            filename="libgazebo_ros_joint_state_publisher.so">
+      <ros>
+        <remapping>~/out:=/joint_states</remapping>
+      </ros>
+      <!-- 需要发布状态的关节列表 -->
+      <joint_name>left_wheel_joint</joint_name>
+      <joint_name>right_wheel_joint</joint_name>
+      <!-- 更新频率(Hz) -->
+      <update_rate>50</update_rate>
+    </plugin>
+  </gazebo>
+
+</robot>

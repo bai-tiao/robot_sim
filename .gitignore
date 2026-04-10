@@ -1,0 +1,18 @@
+# ROS2 build artifacts
+build/
+install/
+log/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Gazebo model cache
+.gazebo/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store

@@ -1,0 +1,192 @@
+<?xml version="1.0"?>
+<!-- ============================================================
+     差速底盘 + 传动关节 xacro
+     diff_drive_base.xacro
+     
+     包含:
+       - base_footprint (虚拟地面参考link)
+       - base_link      (底盘主体)
+       - left/right_wheel
+       - front/rear caster (万向支撑轮)
+     
+     被 robot.urdf.xacro 引用
+     ============================================================ -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- =====================================
+       base_footprint: 虚拟link, 投影到地面,
+       是ROS导航的标准根坐标系
+       ===================================== -->
+  <link name="base_footprint"/>
+
+  <!-- base_footprint -> base_link 固定关节
+       base_link 位于底盘几何中心
+       z偏移 = chassis_z_offset (确保轮子底部在地面)
+  -->
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+    <origin xyz="0 0 ${chassis_z_offset}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- =====================================
+       base_link: 底盘主体
+       ===================================== -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+      <material name="dark_gray"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+    </collision>
+    <xacro:box_inertia m="${chassis_mass}"
+                       dx="${chassis_length}"
+                       dy="${chassis_width}"
+                       dz="${chassis_height}"/>
+  </link>
+
+  <!-- =====================================
+       驱动轮宏定义
+       params:
+         prefix : "left" or "right"
+         y_sign : +1 (左) or -1 (右)
+       轮子转轴沿Y轴, 因此圆柱几何体需要
+       绕X轴旋转90度对齐
+       ===================================== -->
+  <xacro:macro name="drive_wheel" params="prefix y_sign">
+
+    <link name="${prefix}_wheel_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <material name="black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+      </collision>
+      <!-- 轮子惯性矩: 圆柱, 质量轴沿Y轴 -->
+      <inertial>
+        <mass value="${wheel_mass}"/>
+        <!-- 旋转轴为Y轴, 使用圆柱体公式但交换h和r方向:
+             Iyy(spin) = m*r^2/2
+             Ixx=Izz(tilt) = m*(3r^2+h^2)/12  h=wheel_width
+        -->
+        <inertia
+          ixx="${wheel_mass*(3*wheel_radius*wheel_radius + wheel_width*wheel_width)/12.0}"
+          ixy="0.0" ixz="0.0"
+          iyy="${wheel_mass*wheel_radius*wheel_radius/2.0}"
+          iyz="0.0"
+          izz="${wheel_mass*(3*wheel_radius*wheel_radius + wheel_width*wheel_width)/12.0}"/>
+      </inertial>
+    </link>
+
+    <!-- base_link -> wheel 旋转关节 (绕Y轴) -->
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child  link="${prefix}_wheel_link"/>
+      <origin xyz="${wheel_x_offset}
+                   ${y_sign * wheel_y_offset}
+                   ${-chassis_height/2 + (wheel_radius - chassis_z_offset)}"
+              rpy="0 0 0"/>
+      <!-- 旋转轴: Y轴 -->
+      <axis xyz="0 1 0"/>
+      <!-- 【TODO】根据实际电机特性设置摩擦力和阻尼:
+               damping  : 粘滞阻尼系数 (N·m·s/rad), 影响转速衰减
+               friction : 库伦摩擦力矩 (N·m), 静态摩擦 -->
+      <dynamics damping="0.1" friction="0.01"/>
+    </joint>
+
+    <!-- Gazebo差速驱动插件需要的摩擦参数 -->
+    <gazebo reference="${prefix}_wheel_link">
+      <!-- 【TODO】mu1/mu2 为轮地摩擦系数(ODE物理引擎):
+               mu1: 主摩擦方向(滚动方向)
+               mu2: 侧向摩擦
+           室内硬地面典型值: mu1=1.0, mu2=0.5
+           软地面可适当减小 -->
+      <mu1>1.0</mu1>
+      <mu2>0.5</mu2>
+      <kp>1e6</kp>
+      <kd>1.0</kd>
+      <material>Gazebo/Black</material>
+    </gazebo>
+
+  </xacro:macro>
+
+  <!-- 实例化左右驱动轮 -->
+  <xacro:drive_wheel prefix="left"  y_sign="1"/>
+  <xacro:drive_wheel prefix="right" y_sign="-1"/>
+
+  <!-- =====================================
+       万向支撑轮宏定义
+       使用固定关节+球体模拟滑动支撑轮
+       params:
+         prefix  : 轮子名称前缀
+         x_pos   : X轴位置
+         y_sign  : +1(左) or -1(右) 或 0(中)
+       ===================================== -->
+  <xacro:macro name="caster_wheel" params="prefix x_pos y_pos">
+
+    <link name="${prefix}_caster_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <sphere radius="${caster_radius}"/>
+        </geometry>
+        <material name="gray"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <sphere radius="${caster_radius}"/>
+        </geometry>
+      </collision>
+      <xacro:sphere_inertia m="${caster_mass}" r="${caster_radius}"/>
+    </link>
+
+    <joint name="${prefix}_caster_joint" type="fixed">
+      <parent link="base_link"/>
+      <child  link="${prefix}_caster_link"/>
+      <!-- Z: 底盘底面 - 脚轮半径 = 脚轮球心高度 -->
+      <origin xyz="${x_pos} ${y_pos} ${-chassis_height/2 - caster_radius}" rpy="0 0 0"/>
+    </joint>
+
+    <!-- 脚轮设置低摩擦, 允许自由滑动 -->
+    <gazebo reference="${prefix}_caster_link">
+      <mu1>0.0</mu1>
+      <mu2>0.0</mu2>
+      <material>Gazebo/Gray</material>
+    </gazebo>
+
+  </xacro:macro>
+
+  <!-- 实例化4个支撑脚轮 (前左/前右/后左/后右) 
+       【TODO】根据底盘实际支撑结构选择2脚轮或4脚轮:
+         - 2脚轮: 只保留前后中心各一个, 将y_pos设为0
+         - 4脚轮: 保持当前配置
+  -->
+  <xacro:caster_wheel prefix="front_left"
+                      x_pos="${caster_x_front}"
+                      y_pos="${caster_y_offset}"/>
+  <xacro:caster_wheel prefix="front_right"
+                      x_pos="${caster_x_front}"
+                      y_pos="${-caster_y_offset}"/>
+  <xacro:caster_wheel prefix="rear_left"
+                      x_pos="${caster_x_rear}"
+                      y_pos="${caster_y_offset}"/>
+  <xacro:caster_wheel prefix="rear_right"
+                      x_pos="${caster_x_rear}"
+                      y_pos="${-caster_y_offset}"/>
+
+</robot>

@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<!-- ============================================================
+     差速小车 主URDF/Xacro文件
+     robot.urdf.xacro
+     
+     组件结构:
+       base_footprint (地面投影, 导航根坐标系)
+         └── base_link (底盘)
+               ├── left_wheel_link
+               ├── right_wheel_link
+               ├── front_left_caster_link
+               ├── front_right_caster_link
+               ├── rear_left_caster_link
+               ├── rear_right_caster_link
+               ├── lidar_mount_link
+               │     └── lidar_link          ← 3D激光雷达
+               ├── camera_mount_link
+               │     └── camera_link         ← 深度相机
+               │           └── camera_optical_link
+               └── imu_link                  ← IMU
+     
+     坐标系约定 (ROS REP-103):
+       x: 前方  y: 左方  z: 上方
+     
+     TF树 (运行时):
+       map → odom → base_footprint → base_link → ...
+       (map→odom 由SLAM算法发布)
+       (odom→base_footprint 由diff_drive插件发布)
+     ============================================================ -->
+<robot name="diff_drive_robot"
+       xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ============================================================
+       引入参数文件 (首先引入, 其他xacro依赖这些参数)
+       ============================================================ -->
+  <xacro:include filename="$(find robot_description)/urdf/materials.xacro"/>
+  <xacro:include filename="$(find robot_description)/urdf/robot_params.xacro"/>
+
+  <!-- ============================================================
+       引入各组件
+       ============================================================ -->
+  <xacro:include filename="$(find robot_description)/urdf/diff_drive_base.xacro"/>
+  <xacro:include filename="$(find robot_description)/urdf/sensors.xacro"/>
+  <xacro:include filename="$(find robot_description)/urdf/gazebo_control.xacro"/>
+
+  <!-- ============================================================
+       Gazebo 全局属性
+       ============================================================ -->
+  <!-- 底盘Gazebo材质 -->
+  <gazebo reference="base_link">
+    <material>Gazebo/DarkGrey</material>
+  </gazebo>
+
+</robot>
