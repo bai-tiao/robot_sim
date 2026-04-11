@@ -1,4 +1,4 @@
-# sim for VLN
+# sim
 若要在rviz中查看模型
 cd /path/robot_sim && 
 source /opt/ros/humble/setup.bash && 
