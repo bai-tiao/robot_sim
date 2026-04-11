@@ -30,26 +30,25 @@
   </joint>
 
   <!-- =====================================
-       base_link: 底盘主体
+       base_link: 底盘主体 (圆柱形)
        ===================================== -->
   <link name="base_link">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+        <cylinder radius="${chassis_radius}" length="${chassis_height}"/>
       </geometry>
       <material name="dark_gray"/>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+        <cylinder radius="${chassis_radius}" length="${chassis_height}"/>
       </geometry>
     </collision>
-    <xacro:box_inertia m="${chassis_mass}"
-                       dx="${chassis_length}"
-                       dy="${chassis_width}"
-                       dz="${chassis_height}"/>
+    <xacro:cylinder_inertia m="${chassis_mass}"
+                            r="${chassis_radius}"
+                            h="${chassis_height}"/>
   </link>
 
   <!-- =====================================
@@ -96,9 +95,11 @@
     <joint name="${prefix}_wheel_joint" type="continuous">
       <parent link="base_link"/>
       <child  link="${prefix}_wheel_link"/>
+      <!-- 轮心离地面高度 = wheel_radius
+           相对 base_link 中心 Z = wheel_radius - chassis_z_offset -->
       <origin xyz="${wheel_x_offset}
                    ${y_sign * wheel_y_offset}
-                   ${-chassis_height/2 + (wheel_radius - chassis_z_offset)}"
+                   ${wheel_radius - chassis_z_offset}"
               rpy="0 0 0"/>
       <!-- 旋转轴: Y轴 -->
       <axis xyz="0 1 0"/>
@@ -171,22 +172,12 @@
 
   </xacro:macro>
 
-  <!-- 实例化4个支撑脚轮 (前左/前右/后左/后右) 
-       【TODO】根据底盘实际支撑结构选择2脚轮或4脚轮:
-         - 2脚轮: 只保留前后中心各一个, 将y_pos设为0
-         - 4脚轮: 保持当前配置
-  -->
-  <xacro:caster_wheel prefix="front_left"
+  <!-- 前后各一个居中支撑脚轮 -->
+  <xacro:caster_wheel prefix="front_caster"
                       x_pos="${caster_x_front}"
-                      y_pos="${caster_y_offset}"/>
-  <xacro:caster_wheel prefix="front_right"
-                      x_pos="${caster_x_front}"
-                      y_pos="${-caster_y_offset}"/>
-  <xacro:caster_wheel prefix="rear_left"
+                      y_pos="0.0"/>
+  <xacro:caster_wheel prefix="rear_caster"
                       x_pos="${caster_x_rear}"
-                      y_pos="${caster_y_offset}"/>
-  <xacro:caster_wheel prefix="rear_right"
-                      x_pos="${caster_x_rear}"
-                      y_pos="${-caster_y_offset}"/>
+                      y_pos="0.0"/>
 
 </robot>

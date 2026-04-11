@@ -31,14 +31,11 @@
       <left_joint>left_wheel_joint</left_joint>
       <right_joint>right_wheel_joint</right_joint>
 
-      <!-- 轮子半径(m) 【TODO】与 robot_params.xacro 中 wheel_radius 保持一致 -->
-      <wheel_radius>0.085</wheel_radius>
+      <!-- 轮子半径(m) 与 robot_params.xacro 中 wheel_radius 一致 -->
+      <wheel_radius>0.0508</wheel_radius>
 
-      <!-- 轮距(m): 左右轮中心间距 = 2 * wheel_y_offset
-           【TODO】根据实际轮距修改
-                   wheel_separation = 2 * wheel_y_offset = 2 * 0.225 = 0.45
-                   注意: 这是左右轮接地点之间的距离 -->
-      <wheel_separation>0.45</wheel_separation>
+      <!-- 轮距(m): D1文档实测值 0.3559m -->
+      <wheel_separation>0.3559</wheel_separation>
 
       <!-- 最大线速度(m/s) 【TODO】根据电机最大转速和轮径计算 -->
       <max_wheel_torque>20.0</max_wheel_torque>

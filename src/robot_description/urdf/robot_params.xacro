@@ -8,91 +8,70 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <!-- =================== 底盘参数 ===================
-       【TODO】根据实际测量修改:
-         chassis_length : 底盘长度(前后方向, 单位m)
-         chassis_width  : 底盘宽度(左右方向, 单位m)
-         chassis_height : 底盘高度(单位m)
-         chassis_mass   : 底盘质量(单位kg)
+       D1 平台实测参数:
+         chassis_radius : 底盘半径 406mm/2 = 0.203m
+         chassis_height : 底盘高度 209.5mm
+         chassis_mass   : 自重 20kg
   -->
-  <xacro:property name="chassis_length"   value="0.50"/>
-  <xacro:property name="chassis_width"    value="0.40"/>
-  <xacro:property name="chassis_height"   value="0.15"/>
-  <xacro:property name="chassis_mass"     value="10.0"/>
+  <xacro:property name="chassis_radius"   value="0.203"/>
+  <xacro:property name="chassis_height"   value="0.2095"/>
+  <xacro:property name="chassis_mass"     value="20.0"/>
 
   <!-- =================== 驱动轮参数 ===================
-       【TODO】根据实际测量修改:
-         wheel_radius   : 轮子半径(单位m)
-         wheel_width    : 轮子宽度(单位m)
-         wheel_mass     : 单个驱动轮质量(单位kg)
-         wheel_y_offset : 驱动轮在Y轴上的偏移量
-                          通常 = chassis_width/2 + wheel_width/2
-                          注意: 轮子外侧应与底盘外侧齐平或略微突出
+       D1 实测参数:
+         wheel_radius   : 4寸橡胶轮半径 4x25.4/2 = 0.0508m
+         wheel_width    : 轮宽 ~0.04m (待实测)
+         wheel_mass     : 单轮质量估算 ~1.0kg
+         wheel_y_offset : 轮距/2 = 0.3559/2 = 0.17795m
   -->
-  <xacro:property name="wheel_radius"     value="0.085"/>
-  <xacro:property name="wheel_width"      value="0.05"/>
-  <xacro:property name="wheel_mass"       value="0.5"/>
-  <xacro:property name="wheel_y_offset"   value="0.225"/>
-  <!-- 驱动轮在X轴上的位置(相对底盘中心)
-       【TODO】若驱动轮不在底盘纵向中心则修改 -->
+  <xacro:property name="wheel_radius"     value="0.0508"/>
+  <xacro:property name="wheel_width"      value="0.04"/>
+  <xacro:property name="wheel_mass"       value="1.0"/>
+  <xacro:property name="wheel_y_offset"   value="0.17795"/>
   <xacro:property name="wheel_x_offset"   value="0.0"/>
 
   <!-- =================== 万向支撑轮参数 ===================
-       【TODO】根据实际情况修改或增减支撑轮:
-         caster_radius   : 支撑脚轮半径(单位m)
-         caster_mass     : 支撑脚轮质量(单位kg)
-         caster_x_front  : 前支撑轮在X轴的偏移量(正数=前方)
-         caster_x_rear   : 后支撑轮在X轴的偏移量(负数=后方)
-         caster_y_offset : 支撑轮在Y轴的偏移量
+       D1 万向轮: 1寸 = 25.4mm直径, 半径 0.0127m
+       布局: 前居中 + 后居中 各1个
+         caster_y_offset = 0 (居中布局)
   -->
-  <xacro:property name="caster_radius"    value="0.03"/>
+  <xacro:property name="caster_radius"    value="0.0127"/>
   <xacro:property name="caster_mass"      value="0.1"/>
-  <xacro:property name="caster_x_front"   value="0.18"/>
-  <xacro:property name="caster_x_rear"    value="-0.18"/>
-  <xacro:property name="caster_y_offset"  value="0.12"/>
+  <xacro:property name="caster_x_front"   value="0.15"/>
+  <xacro:property name="caster_x_rear"    value="-0.15"/>
+  <xacro:property name="caster_y_offset"  value="0.0"/>
 
   <!-- =================== 底盘离地高度 ===================
-       驱动轮半径即为底盘最低面离地高度
-       chassis_z_offset = wheel_radius - chassis_height/2
-       【注意】这是底盘link的z位置, 保证轮子底部在z=0(地面)
+       D1文档: 离地高度 38mm
+       chassis_z_offset = 离地高度 + chassis_height/2
+       = 0.038 + 0.2095/2 = 0.14275m
+       (base_link原点在底盘几何中心)
   -->
-  <xacro:property name="chassis_z_offset" value="${wheel_radius - chassis_height/2}"/>
+  <xacro:property name="chassis_z_offset" value="${0.038 + chassis_height/2}"/>
 
   <!-- =================== 3D激光雷达安装参数 ===================
-       【TODO】根据实际安装位置修改:
-         lidar_x        : 激光雷达在底盘坐标系X轴偏移(正=前)
-                          前置雷达建议安装在底盘前沿或稍后一点
-         lidar_y        : 激光雷达在底盘坐标系Y轴偏移(正=左)
-                          一般居中, 设为0
-         lidar_z        : 激光雷达相对底盘顶面的高度
-                          lidar_z = chassis_height/2 + 支架高度 + 雷达半高
-         lidar_mass     : 激光雷达质量(单位kg)
-         lidar_radius   : 激光雷达外壳近似圆柱半径(单位m), 用于碰撞检测
-         lidar_height   : 激光雷达外壳近似圆柱高度(单位m)
+       前置安装在底盘顶面前沿 (x ≈ chassis_radius*0.8):
+         lidar_x = 0.16m (圆形底盘前沿内侧)
+         lidar_y = 0.0   (居中)
+         lidar_z = chassis_height/2 + 支架0.05m + 雷达半高0.03m
+       【TODO】雷达型号确定后校对 lidar_radius/lidar_height
   -->
-  <xacro:property name="lidar_x"          value="0.15"/>
+  <xacro:property name="lidar_x"          value="0.16"/>
   <xacro:property name="lidar_y"          value="0.0"/>
-  <xacro:property name="lidar_z"          value="${chassis_height/2 + 0.1}"/>
+  <xacro:property name="lidar_z"          value="${chassis_height/2 + 0.08}"/>
   <xacro:property name="lidar_mass"       value="0.83"/>
   <xacro:property name="lidar_radius"     value="0.04"/>
   <xacro:property name="lidar_height"     value="0.06"/>
 
   <!-- =================== 深度相机安装参数 ===================
-       【TODO】根据实际安装位置修改:
-         camera_x       : 深度相机在底盘坐标系X轴偏移
-                          相机一般安装在小车正前方
-         camera_y       : 深度相机在底盘坐标系Y轴偏移(居中则为0)
-         camera_z       : 深度相机在底盘坐标系Z轴偏移
-         camera_mass    : 深度相机质量(单位kg)
-         camera_size_x  : 相机盒型近似尺寸(深度)
-         camera_size_y  : 相机盒型近似尺寸(宽度)
-         camera_size_z  : 相机盒型近似尺寸(高度)
-         
-       相机安装高度建议与人眼/场景关键特征高度接近, VLN任务中
-       通常在0.5~1.2m范围内(视任务场景而定)
+       前置安装, 与激光雷达同一X位置, 雷达上方:
+         camera_x = lidar_x = 0.16m
+         camera_z = chassis_height/2 + 0.18m (雷达上方约0.1m)
+       【TODO】相机安装高度以实际支架为准
   -->
-  <xacro:property name="camera_x"         value="0.22"/>
+  <xacro:property name="camera_x"         value="0.16"/>
   <xacro:property name="camera_y"         value="0.0"/>
-  <xacro:property name="camera_z"         value="${chassis_height/2 + 0.25}"/>
+  <xacro:property name="camera_z"         value="${chassis_height/2 + 0.18}"/>
   <xacro:property name="camera_mass"      value="0.15"/>
   <xacro:property name="camera_size_x"    value="0.03"/>
   <xacro:property name="camera_size_y"    value="0.09"/>
