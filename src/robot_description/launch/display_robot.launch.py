@@ -13,9 +13,9 @@ display_robot.launch.py
 import os
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration, Command, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, Command
 from launch_ros.actions import Node
-from launch_ros.substitutions import FindPackageShare
+from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
 
 
@@ -36,16 +36,11 @@ def generate_launch_description():
         description='是否使用仿真时钟(Gazebo时用true)'
     )
 
-    rviz_config_arg = DeclareLaunchArgument(
-        name='rviz_config',
-        default_value=os.path.join(pkg_share, 'config', 'robot_description.rviz'),
-        description='RViz2配置文件路径'
-    )
-
     # ── xacro解析为URDF字符串 ─────────────────────────────────────────
-    robot_description = Command([
-        'xacro ', LaunchConfiguration('urdf_model')
-    ])
+    robot_description = ParameterValue(
+        Command(['xacro ', LaunchConfiguration('urdf_model')]),
+        value_type=str
+    )
 
     # ── robot_state_publisher ────────────────────────────────────────
     # 发布 robot_description 参数 和 TF (fixed joints)
@@ -78,7 +73,6 @@ def generate_launch_description():
         executable='rviz2',
         name='rviz2',
         output='screen',
-        arguments=['-d', LaunchConfiguration('rviz_config')],
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
         }]
@@ -87,7 +81,6 @@ def generate_launch_description():
     return LaunchDescription([
         urdf_model_arg,
         use_sim_time_arg,
-        rviz_config_arg,
         robot_state_publisher_node,
         joint_state_publisher_gui_node,
         rviz2_node,
