@@ -14,35 +14,9 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <!-- ============================================================
-       3D激光雷达
+       3D激光雷达 (半球形)
+       与深度相机并排安装在上层圆盘前沿, 朝上覆盖半球视野
        ============================================================ -->
-
-  <!-- 雷达支架link -->
-  <link name="lidar_mount_link">
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <!-- 【TODO】根据实际支架尺寸调整 -->
-        <cylinder radius="0.02" length="0.08"/>
-      </geometry>
-      <material name="dark_gray"/>
-    </visual>
-    <collision>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <cylinder radius="0.02" length="0.08"/>
-      </geometry>
-    </collision>
-    <xacro:cylinder_inertia m="0.05" r="0.02" h="0.08"/>
-  </link>
-
-  <joint name="lidar_mount_joint" type="fixed">
-    <parent link="base_link"/>
-    <child  link="lidar_mount_link"/>
-    <!-- 支架安装在底盘前部顶面 
-         【TODO】x/y偏移根据实际安装调整 -->
-    <origin xyz="${lidar_x} ${lidar_y} ${chassis_height/2 + 0.04}" rpy="0 0 0"/>
-  </joint>
 
   <!-- 雷达主体link -->
   <link name="lidar_link">
@@ -62,11 +36,17 @@
     <xacro:cylinder_inertia m="${lidar_mass}" r="${lidar_radius}" h="${lidar_height}"/>
   </link>
 
+  <!-- lidar_link 挂载在 top_plate_link
+       位置由外参标定矩阵反推(锁定相机位置, 推算雷达位置):
+         相机已知(top_plate): x=0.15, y=0.0, z=0.019
+         雷达位置 = 相机位置 - R_pitch(-28.3°) * t
+         结果: x=-0.006m, y=-0.037m, z=0.027m
+         即雷达在相机后方偏右，与相机几乎等高 (与实物吕合)
+       rpy pitch=-0.4947 rad (-28.3°): 由外参矩阵第3列反推 -->
   <joint name="lidar_joint" type="fixed">
-    <parent link="lidar_mount_link"/>
+    <parent link="top_plate_link"/>
     <child  link="lidar_link"/>
-    <!-- Z偏移 = 支架高度/2 + 雷达高度/2 -->
-    <origin xyz="0 0 ${0.04 + lidar_height/2}" rpy="0 0 0"/>
+    <origin xyz="${lidar_x} ${lidar_y} ${top_plate_height/2 + lidar_height/2 + 0.008}" rpy="0 -0.4947 0"/>
   </joint>
 
   <!-- Gazebo 3D激光雷达传感器插件 -->
@@ -82,14 +62,13 @@
 
       <ray>
         <scan>
-          <!-- 水平扫描: 360度, 采样点数
-               VLP-16: 1800点(0.2°分辨率) / HDL-32: 2160点
-               【TODO】horizontal_samples根据型号调整 -->
+          <!-- 水平扫描: 前180度(-90°~+90°), 采样点数
+               VLP-16: 900点(0.2°分辨率) / 只保留前半圆数据 -->
           <horizontal>
-            <samples>1800</samples>
+            <samples>900</samples>
             <resolution>1</resolution>
-            <min_angle>-3.14159265</min_angle>
-            <max_angle>3.14159265</max_angle>
+            <min_angle>-1.5707963268</min_angle>
+            <max_angle>1.5707963268</max_angle>
           </horizontal>
 
           <!-- 垂直扫描(线束)
@@ -145,37 +124,12 @@
 
   <!-- ============================================================
        深度相机 (RGB-D)
-       支持 RealSense D435/D455 风格的配置
+       挂载在 lidar_link 下方, 位置由外参标定矩阵确定:
+         T_camera_in_lidar 平移量 t = [0.1336, 0.0369, -0.0807] m
+         相机在雷达前方 13.4cm, 左方 3.7cm, 下方 8.1cm
        ============================================================ -->
 
-  <!-- 相机支架link -->
-  <link name="camera_mount_link">
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <!-- 【TODO】根据实际支架尺寸调整 -->
-        <box size="0.02 0.04 0.15"/>
-      </geometry>
-      <material name="dark_gray"/>
-    </visual>
-    <collision>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <box size="0.02 0.04 0.15"/>
-      </geometry>
-    </collision>
-    <xacro:box_inertia m="0.05" dx="0.02" dy="0.04" dz="0.15"/>
-  </link>
-
-  <joint name="camera_mount_joint" type="fixed">
-    <parent link="base_link"/>
-    <child  link="camera_mount_link"/>
-    <!-- 相机支架安装在底盘前部
-         【TODO】x/y偏移和z高度根据实际安装调整 -->
-    <origin xyz="${camera_x - 0.01} ${camera_y} ${chassis_height/2 + 0.075}" rpy="0 0 0"/>
-  </joint>
-
-  <!-- 相机主体link (RGB部分中心为光学原点) -->
+  <!-- 相机主体link -->
   <link name="camera_link">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -196,12 +150,15 @@
                        dz="${camera_size_z}"/>
   </link>
 
+  <!-- 相机安装关节:
+       父节点 = top_plate_link (物理安装位置已知)
+       x=camera_x=0.15m (顶盘前沿), y=0, z=顶盘半厚+相机半高
+       rpy=0: 水平朝前
+       外参标定的旋转部分 RPY=(-1.076,0.017,-1.570) 仅用于 FAST-LIO2 算法配置 -->
   <joint name="camera_joint" type="fixed">
-    <parent link="camera_mount_link"/>
+    <parent link="top_plate_link"/>
     <child  link="camera_link"/>
-    <!-- 相机固定在支架顶部
-         【TODO】根据实际相机安装高度和水平位置调整 -->
-    <origin xyz="${camera_size_x/2} 0 ${0.075}" rpy="0 0 0"/>
+    <origin xyz="${camera_x} ${camera_y} ${top_plate_height/2 + camera_size_z/2}" rpy="0 0 0"/>
   </joint>
 
   <!-- ROS标准: 相机光学坐标系

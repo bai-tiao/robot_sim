@@ -31,13 +31,11 @@
       <left_joint>left_wheel_joint</left_joint>
       <right_joint>right_wheel_joint</right_joint>
 
-      <!-- 轮子半径(m) 与 robot_params.xacro 中 wheel_radius 一致 -->
-      <wheel_radius>0.0508</wheel_radius>
+      <!-- 轮子直径(m): Φ125mm = 0.125m -->
+      <wheel_diameter>0.125</wheel_diameter>
 
-      <!-- 轮距(m): D1文档实测值 0.3559m -->
-      <wheel_separation>0.3559</wheel_separation>
-
-      <!-- 最大线速度(m/s) 【TODO】根据电机最大转速和轮径计算 -->
+      <!-- 轮距(m): 图纸标注 350.7mm -->  
+      <wheel_separation>0.3507</wheel_separation>      <!-- 最大线速度(m/s) 【TODO】根据电机最大转速和轮径计算 -->
       <max_wheel_torque>20.0</max_wheel_torque>
 
       <!-- 最大角加速度(rad/s^2) -->

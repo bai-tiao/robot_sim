@@ -18,16 +18,16 @@
   <xacro:property name="chassis_mass"     value="20.0"/>
 
   <!-- =================== 驱动轮参数 ===================
-       D1 实测参数:
-         wheel_radius   : 4寸橡胶轮半径 4x25.4/2 = 0.0508m
+       D1 图纸实测参数:
+         wheel_radius   : 驱动轮 Φ125mm → 半径 0.0625m
          wheel_width    : 轮宽 ~0.04m (待实测)
          wheel_mass     : 单轮质量估算 ~1.0kg
-         wheel_y_offset : 轮距/2 = 0.3559/2 = 0.17795m
+         wheel_y_offset : 轮距/2 = 350.7mm/2 = 0.17535m
   -->
-  <xacro:property name="wheel_radius"     value="0.0508"/>
+  <xacro:property name="wheel_radius"     value="0.0625"/>
   <xacro:property name="wheel_width"      value="0.04"/>
   <xacro:property name="wheel_mass"       value="1.0"/>
-  <xacro:property name="wheel_y_offset"   value="0.17795"/>
+  <xacro:property name="wheel_y_offset"   value="0.17535"/>
   <xacro:property name="wheel_x_offset"   value="0.0"/>
 
   <!-- =================== 万向支撑轮参数 ===================
@@ -49,29 +49,46 @@
   -->
   <xacro:property name="chassis_z_offset" value="${0.038 + chassis_height/2}"/>
 
-  <!-- =================== 3D激光雷达安装参数 ===================
-       前置安装在底盘顶面前沿 (x ≈ chassis_radius*0.8):
-         lidar_x = 0.16m (圆形底盘前沿内侧)
-         lidar_y = 0.0   (居中)
-         lidar_z = chassis_height/2 + 支架0.05m + 雷达半高0.03m
-       【TODO】雷达型号确定后校对 lidar_radius/lidar_height
+  <!-- =================== 上层圆盘平台参数 ===================
+       4根柱子支撑上层圆盘, 外观参考实物图:
+         pillar_height   : 柱子高度 ≈ chassis_height * 0.6
+         pillar_radius   : 细圆柱半径
+         pillar_xy_offset: 柱子分布在圆盘半径70%处
+         top_plate_radius: 上层圆盘半径 = chassis_radius
+         top_plate_height: 上层圆盘厚度
   -->
-  <xacro:property name="lidar_x"          value="0.16"/>
+  <xacro:property name="pillar_height"     value="${chassis_height * 0.6}"/>
+  <xacro:property name="pillar_radius"     value="0.015"/>
+  <xacro:property name="pillar_mass"       value="0.5"/>
+  <xacro:property name="pillar_xy_offset"  value="${chassis_radius * 0.7}"/>
+  <xacro:property name="top_plate_radius"  value="${chassis_radius}"/>
+  <xacro:property name="top_plate_height"  value="0.008"/>
+  <xacro:property name="top_plate_mass"    value="1.0"/>
+
+  <!-- =================== 3D激光雷达安装参数 ===================
+       雷达位置由外参标定 + 相机已知位置反推:
+         相机已知(top_plate坐标系): x=0.15, y=0.0, z=0.019
+         雷达位置 = 相机位置 - R_pitch(-28.3°) × t
+         结果: lidar_x=-0.006m, lidar_y=-0.037m, z=0.027m
+         即雷达在相机后方偏右、几乎等高，与实物图吹合
+       rpy pitch=-0.4947 rad (-28.3°): 由外参矩阵第3列反推
+  -->
+  <xacro:property name="lidar_x"          value="0.10"/>
   <xacro:property name="lidar_y"          value="0.0"/>
-  <xacro:property name="lidar_z"          value="${chassis_height/2 + 0.08}"/>
+  <!-- lidar_z 已废弃, 由 sensors.xacro 中 joint origin 直接计算 -->
   <xacro:property name="lidar_mass"       value="0.83"/>
   <xacro:property name="lidar_radius"     value="0.04"/>
   <xacro:property name="lidar_height"     value="0.06"/>
 
   <!-- =================== 深度相机安装参数 ===================
-       前置安装, 与激光雷达同一X位置, 雷达上方:
-         camera_x = lidar_x = 0.16m
-         camera_z = chassis_height/2 + 0.18m (雷达上方约0.1m)
+       安装在上层圆盘前沿:
+         camera_x = 0.15m (圆盘前沿内侧)
+         camera_y = 0.0   (居中)
+       camera z/高度由 sensors.xacro 中 camera_joint 计算
        【TODO】相机安装高度以实际支架为准
   -->
-  <xacro:property name="camera_x"         value="0.16"/>
+  <xacro:property name="camera_x"         value="0.15"/>
   <xacro:property name="camera_y"         value="0.0"/>
-  <xacro:property name="camera_z"         value="${chassis_height/2 + 0.18}"/>
   <xacro:property name="camera_mass"      value="0.15"/>
   <xacro:property name="camera_size_x"    value="0.03"/>
   <xacro:property name="camera_size_y"    value="0.09"/>
