@@ -7,6 +7,7 @@ install(DIRECTORY
   launch
   config
   params
+  scripts
   DESTINATION share/${PROJECT_NAME}/
 )
 

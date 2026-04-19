@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>vehicle_simulator</name>
+  <version>0.1.0</version>
+  <description>
+    Unity 虚拟车辆仿真器。
+    订阅 /cmd_vel (TwistStamped)，积分位姿后：
+      - 发布 /state_estimation (Odometry, map→sensor)
+      - 发布 TF: map→sensor
+      - 发布 /unity_sim/set_model_state 同步 Unity 场景中的机器人位置
+    同时提供 sim_image_repub 节点将 Unity 压缩图像解压为 raw 格式。
+    原始代码来自 CMU Autonomous Exploration Development Environment
+    (https://github.com/HongbiaoZ/autonomous_exploration_development_environment)
+    License: BSD
+  </description>
+  <maintainer email="placeholder@example.com">robot_sim</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>pcl_ros</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>message_filters</depend>
+  <depend>pcl_conversions</depend>
+  <depend>cv_bridge</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
