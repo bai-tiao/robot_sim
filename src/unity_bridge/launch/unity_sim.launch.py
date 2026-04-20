@@ -111,6 +111,39 @@ def generate_launch_description():
         arguments=['0', '0', '-0.75', '0', '0', '0', 'sensor', 'base_footprint']
     )
 
+    # ── visualization_tools: 读 map.ply → 发布 /overall_map ──
+    viz_tools = Node(
+        package='visualization_tools',
+        executable='visualizationTools',
+        name='visualization_tools',
+        output='log',
+        parameters=[{
+            'mapFile': '/home/zsh/autonomy_stack_diablo_setup/src/base_autonomy/vehicle_simulator/mesh/unity/map.ply',
+        }]
+    )
+
+    # ── octomap_server: /overall_map (PointCloud2) → /map (OccupancyGrid) ──
+    octomap = Node(
+        package='octomap_server',
+        executable='octomap_server_node',
+        name='octomap_server',
+        output='log',
+        parameters=[{
+            'resolution': 0.1,
+            'frame_id': 'map',
+            'sensor_model/max_range': 50.0,
+            'occupancy_min_z': -0.3,    # 只投影地面以上的障碍
+            'occupancy_max_z': 2.5,
+            'filter_ground': True,
+            'ground_filter/distance': 0.04,
+            'ground_filter/angle': 0.15,
+            'ground_filter/plane_distance': 0.07,
+        }],
+        remappings=[
+            ('cloud_in', '/overall_map'),
+        ]
+    )
+
     return LaunchDescription([
         vh_arg,
         tcp_port_arg,
@@ -119,4 +152,6 @@ def generate_launch_description():
         vehicle_simulator,
         sensor_scan_gen,
         static_tf,
+        viz_tools,
+        octomap,
     ])

@@ -284,12 +284,12 @@ global_costmap:
         pointcloud:
           topic: /sensor_scan
           max_obstacle_height: 2.0
-          clearing: true
+          clearing: false
           marking: true
           data_type: "PointCloud2"
-          raytrace_max_range: 3.0
+          raytrace_max_range: 20.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
+          obstacle_max_range: 19.5
           obstacle_min_range: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"

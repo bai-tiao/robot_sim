@@ -154,6 +154,12 @@ void laserCloudAndOdometryHandler(const nav_msgs::msg::Odometry::ConstSharedPtr 
     if (v_angle < V_FOV_DOWN || v_angle > V_FOV_UP)
       continue;
 
+    // ---- 地面过滤 ----
+    // sensor 坐标系原点在机器人质心(离地 vehicleHeight≈0.75m)
+    // 地面在 z ≈ -0.75m，留 0.1m 余量过滤地面点
+    if (p1.z < -0.65f)
+      continue;
+
     laserCLoudInSensorFrame->points.push_back(p1);
   }
 
