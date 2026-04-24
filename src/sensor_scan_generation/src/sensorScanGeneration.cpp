@@ -160,6 +160,12 @@ void laserCloudAndOdometryHandler(const nav_msgs::msg::Odometry::ConstSharedPtr 
     if (p1.z < -0.65f)
       continue;
 
+    // ---- 天花板过滤 ----
+    // 天花板约 2.5m 高，sensor 原点离地 0.75m，天花板在 sensor 系 z ≈ +1.75m
+    // 留 0.25m 余量，过滤天花板点防止投影到地面形成虚假障碍
+    if (p1.z > 1.5f)
+      continue;
+
     laserCLoudInSensorFrame->points.push_back(p1);
   }
 

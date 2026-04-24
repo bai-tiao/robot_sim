@@ -129,11 +129,11 @@ def generate_launch_description():
         name='octomap_server',
         output='log',
         parameters=[{
-            'resolution': 0.1,
+            'resolution': 0.15,
             'frame_id': 'map',
             'sensor_model/max_range': 50.0,
-            'occupancy_min_z': -0.3,    # 只投影地面以上的障碍
-            'occupancy_max_z': 2.5,
+            'occupancy_min_z': 0.1,
+            'occupancy_max_z': 2.0,
             'filter_ground': True,
             'ground_filter/distance': 0.04,
             'ground_filter/angle': 0.15,
@@ -141,6 +141,7 @@ def generate_launch_description():
         }],
         remappings=[
             ('cloud_in', '/overall_map'),
+            ('projected_map', '/map'),
         ]
     )
 

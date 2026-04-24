@@ -272,29 +272,24 @@ global_costmap:
       resolution: 0.05
       track_unknown_space: false
       rolling_window: false
-      width: 50
-      height: 50
-      origin_x: -25.0
-      origin_y: -25.0
-      plugins: ["obstacle_layer", "inflation_layer"]
+      width: 60
+      height: 55
+      origin_x: -15.0
+      origin_y: -10.0
+      plugins: ["static_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+        enabled: true
+        subscribe_to_updates: false
+        transform_tolerance: 0.5
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
-        enabled: true
-        observation_sources: pointcloud
-        pointcloud:
-          topic: /sensor_scan
-          max_obstacle_height: 2.0
-          clearing: false
-          marking: true
-          data_type: "PointCloud2"
-          raytrace_max_range: 20.0
-          raytrace_min_range: 0.0
-          obstacle_max_range: 19.5
-          obstacle_min_range: 0.0
+        enabled: false
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        inflation_radius: 0.3
       always_send_full_costmap: true
 
 map_server:
