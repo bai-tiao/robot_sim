@@ -9,7 +9,9 @@
 # ============================================================
 
 ROBOT_WS="/home/zsh/VLN/robot_sim"
-UNITY_EXEC="/home/zsh/autonomy_stack_diablo_setup/src/base_autonomy/vehicle_simulator/mesh/unity/environment/Model.x86_64"
+
+# Unity 可执行文件路径：优先使用环境变量 UNITY_EXEC，否则用默认路径
+UNITY_EXEC="${UNITY_EXEC:-/home/zsh/autonomy_stack_diablo_setup/src/base_autonomy/vehicle_simulator/mesh/unity/environment/Model.x86_64}"
 
 # ── stop 子命令 ──────────────────────────────────────────────
 if [[ "$1" == "stop" ]]; then

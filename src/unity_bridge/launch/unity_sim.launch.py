@@ -33,6 +33,12 @@ from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+# Unity 资源目录：优先使用环境变量 UNITY_ASSETS_DIR，否则用默认路径
+_ASSETS = os.environ.get(
+    'UNITY_ASSETS_DIR',
+    '/home/zsh/autonomy_stack_diablo_setup/src/base_autonomy/vehicle_simulator/mesh/unity'
+)
+
 
 def generate_launch_description():
 
@@ -118,7 +124,7 @@ def generate_launch_description():
         name='visualization_tools',
         output='log',
         parameters=[{
-            'mapFile': '/home/zsh/autonomy_stack_diablo_setup/src/base_autonomy/vehicle_simulator/mesh/unity/map.ply',
+            'mapFile': os.path.join(_ASSETS, 'map.ply'),
         }]
     )
 
