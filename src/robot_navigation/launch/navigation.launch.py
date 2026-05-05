@@ -1,22 +1,22 @@
 """
 navigation.launch.py
 ====================
-启动 Nav2 导航栈
+启动 Nav2 导航栈（Isaac Sim 模式）
 
 支持模式 (mode 参数):
-  unity — Unity 仿真模式 (默认): vehicleSimulator 提供定位, 无需 SLAM
-  nav   — 加载已有地图 + AMCL 定位 + 导航
+  isaac — Isaac Sim 仿真模式 (默认): slam_toolbox 在线建图 + Nav2 导航
+  nav   — 加载已有地图 + AMCL 定位 + 导航（真实机器人）
 
 用法:
-  # Unity 仿真导航
-  ros2 launch robot_navigation navigation.launch.py
+  # Isaac 仿真导航（默认）
+  ros2 launch robot_navigation navigation.launch.py use_sim_time:=true
 
-  # 已有地图导航
+  # 已有地图导航（真实机器人）
   ros2 launch robot_navigation navigation.launch.py \\
       mode:=nav map:=/path/to/map.yaml use_sim_time:=false
 
-全局规划: NavFn (A*)  — nav2_params.yaml planner_server 节
-局部规划: DWB         — nav2_params.yaml FollowPath 节, 换算法只改这里
+全局规划: NavFn (A*)  — nav2_params_isaac.yaml
+局部规划: DWB         — nav2_params_isaac.yaml
 """
 
 import os
@@ -28,7 +28,6 @@ from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
-
 def generate_launch_description():
 
     pkg_nav = get_package_share_directory('robot_navigation')
@@ -36,12 +35,12 @@ def generate_launch_description():
 
     # ── 参数声明 ──────────────────────────────────────────────
     mode_arg = DeclareLaunchArgument(
-        'mode', default_value='unity',
-        description='运行模式: unity=Unity仿真(无需SLAM), nav=已有地图'
+        'mode', default_value='isaac',
+        description='运行模式: isaac=Isaac Sim仿真(slam_toolbox建图), nav=已有地图(真实机器人)'
     )
     use_sim_time_arg = DeclareLaunchArgument(
-        'use_sim_time', default_value='false',
-        description='true=Gazebo, false=Unity/真实机器人'
+        'use_sim_time', default_value='true',
+        description='true=Isaac Sim, false=真实机器人'
     )
     map_arg = DeclareLaunchArgument(
         'map', default_value='',
@@ -52,33 +51,37 @@ def generate_launch_description():
         default_value=os.path.join(pkg_nav, 'params', 'nav2_params.yaml'),
         description='Nav2 参数文件'
     )
-
     mode = LaunchConfiguration('mode')
     use_sim_time = LaunchConfiguration('use_sim_time')
 
     # ── PointCloud2 → LaserScan ───────────────────────────────
-    # 将 /sensor_scan 转为 /scan 供代价地图障碍物层使用
+    # Isaac PhysX LiDAR (16线 ±15°) 发布 /lidar/points (PointCloud2)
+    # 这里将其投影为 /scan (LaserScan) 供 slam_toolbox 和 Nav2 使用
+    # min_height/max_height 选取接近地面水平面的点（高度相对 lidar_link 坐标系）
     pointcloud_to_laserscan = Node(
         package='pointcloud_to_laserscan',
         executable='pointcloud_to_laserscan_node',
         name='pointcloud_to_laserscan',
         output='screen',
         remappings=[
-            ('cloud_in', '/sensor_scan'),
-            ('scan', '/scan'),
+            ('cloud_in', '/lidar/points'),
+            ('scan',     '/scan'),
         ],
         parameters=[{
-            'target_frame': 'sensor',
-            'transform_tolerance': 0.1,
-            'min_height': -0.5,
-            'max_height': 1.5,
-            'angle_min': -3.14159,
-            'angle_max':  3.14159,
-            'angle_increment': 0.00349,
-            'scan_time': 0.1,
-            'range_min': 0.1,
-            'range_max': 100.0,
-            'use_inf': True,
+            'use_sim_time': use_sim_time,
+            # base_footprint 坐标系下做高度切片，与雷达安装角度无关
+            # 取机器人高度 0.1m~0.7m 范围（覆盖从底盘上沿到雷达）
+            'target_frame': 'base_footprint',
+            'transform_tolerance': 0.5,
+            'min_height': 0.1,     # 离地 0.1m 以上（过滤地面）
+            'max_height': 0.7,     # 离地 0.7m 以下（过滤天花板）
+            'angle_min':  -1.5708, # -90°（前半圆）
+            'angle_max':   1.5708, # +90°
+            'angle_increment': 0.00349,  # 0.2°
+            'scan_time':  0.1,
+            'range_min':  0.1,
+            'range_max':  50.0,
+            'use_inf':    True,
         }],
     )
 
@@ -124,7 +127,7 @@ def generate_launch_description():
     ]
     lifecycle_nodes_nav = ['map_server', 'amcl'] + lifecycle_nodes_base
 
-    lifecycle_mgr_unity = Node(
+    lifecycle_mgr_isaac = Node(
         package='nav2_lifecycle_manager',
         executable='lifecycle_manager',
         name='lifecycle_manager_navigation',
@@ -134,7 +137,7 @@ def generate_launch_description():
             'autostart': True,
             'node_names': lifecycle_nodes_base,
         }],
-        condition=IfCondition(PythonExpression(["'", mode, "' == 'unity'"]))
+        condition=IfCondition(PythonExpression(["'" , mode, "' == 'isaac'"]))
     )
 
     lifecycle_mgr_nav = Node(
@@ -159,6 +162,6 @@ def generate_launch_description():
         nav2_core,
         map_server,
         amcl,
-        lifecycle_mgr_unity,
+        lifecycle_mgr_isaac,
         lifecycle_mgr_nav,
     ])

@@ -1,12 +1,12 @@
 """
-unity_sim.launch.py  (robot_description 包)
-============================================
+isaac_sim_robot.launch.py  (robot_description 包)
+=================================================
 启动 robot_state_publisher + joint_state_publisher + RViz2。
-不含 Unity 桥接节点 (由 unity_bridge/unity_sim.launch.py 负责)。
+配合 isaac_bridge/isaac_sim.launch.py 使用。
 
 用法:
-  ros2 launch robot_description unity_sim.launch.py
-  ros2 launch robot_description unity_sim.launch.py rviz:=false
+  ros2 launch robot_description isaac_sim_robot.launch.py
+  ros2 launch robot_description isaac_sim_robot.launch.py rviz:=false
 """
 import os
 from launch import LaunchDescription
@@ -35,7 +35,7 @@ def generate_launch_description():
         package='robot_state_publisher',
         executable='robot_state_publisher',
         output='screen',
-        parameters=[{'robot_description': robot_desc, 'use_sim_time': False}]
+        parameters=[{'robot_description': robot_desc, 'use_sim_time': True}]
     )
 
     # 延迟 2s 启动，等 RSP 先发布 /robot_description 话题
@@ -43,7 +43,7 @@ def generate_launch_description():
         package='joint_state_publisher',
         executable='joint_state_publisher',
         output='screen',
-        parameters=[{'robot_description': robot_desc, 'use_gui': False}]
+        parameters=[{'robot_description': robot_desc, 'use_gui': False, 'use_sim_time': True}]
     )
 
     rviz_config = os.path.join(pkg, 'config', 'gazebo_sim.rviz')
@@ -52,7 +52,7 @@ def generate_launch_description():
         executable='rviz2',
         output='screen',
         arguments=['-d', rviz_config],
-        parameters=[{'use_sim_time': False}],
+        parameters=[{'use_sim_time': True}],
         condition=IfCondition(LaunchConfiguration('rviz'))
     )
 
