@@ -87,13 +87,15 @@ print(f"[isaac_scene] offline_kit={_OFFLINE_KIT or '(默认)'}", flush=True)
 from isaacsim import SimulationApp
 app = SimulationApp({
     "headless": _HEADLESS,
-    "renderer": "RayTracedLighting",
+    # Storm = OpenGL/Hydra 渲染器，不依赖 RTX，对 50 系显卡兼容性最好
+    # RayTracedLighting = RTX 渲染器（50 系有兼容性问题，会导致线框/黑屏）
+    "renderer": "Storm",
     "width": 1280,
     "height": 720,
     "anti_aliasing": 0,
     "experience": _OFFLINE_KIT,
 })
-print("[isaac_scene] SimulationApp ready", flush=True)
+print("[isaac_scene] SimulationApp ready (renderer=Storm/OpenGL)", flush=True)
 
 import omni.graph.core as og
 from isaacsim.core.api import World
@@ -296,9 +298,28 @@ def build_ros2_graph(robot_root, render_product_path=""):
         print("[isaac_scene] ⚠️  无 lidar prim，跳过 /lidar/points OmniGraph", flush=True)
 
 
+def _make_material(stage, mat_path, rgb=(0.8, 0.8, 0.8), roughness=0.6, metallic=0.0):
+    """创建 UsdPreviewSurface 材质（Storm 渲染器下显示实体颜色）"""
+    from pxr import UsdShade, Sdf, Gf
+    material = UsdShade.Material.Define(stage, mat_path)
+    shader   = UsdShade.Shader.Define(stage, f"{mat_path}/Shader")
+    shader.CreateIdAttr("UsdPreviewSurface")
+    shader.CreateInput("diffuseColor",  Sdf.ValueTypeNames.Color3f ).Set(Gf.Vec3f(*rgb))
+    shader.CreateInput("roughness",     Sdf.ValueTypeNames.Float   ).Set(roughness)
+    shader.CreateInput("metallic",      Sdf.ValueTypeNames.Float   ).Set(metallic)
+    shader.CreateInput("opacity",       Sdf.ValueTypeNames.Float   ).Set(1.0)
+    material.CreateSurfaceOutput().ConnectToSource(
+        shader.ConnectableAPI(), "surface")
+    return material
+
+
 def add_simple_room(stage, half_x=8.0, half_y=6.0, height=3.0, thickness=0.3):
-    """用 USD PhysicsAPI 生成四面墙 + 碰撞箱，无需下载任何资产"""
-    from pxr import UsdGeom, UsdPhysics, Gf, Sdf
+    """用 USD PhysicsAPI 生成四面墙 + 碰撞箱，含材质（Storm 渲染器下显示为实体）"""
+    from pxr import UsdGeom, UsdPhysics, UsdShade, Gf, Sdf
+
+    # 预建材质（浅灰色墙面，Storm 渲染器下显示为实体）
+    wall_mat  = _make_material(stage, "/World/Looks/WallMat",  rgb=(0.82, 0.82, 0.82))
+
     walls = [
         # (name, size_xyz,       translate_xyz)
         ("wall_N", (half_x*2+thickness*2, thickness, height), (0,  half_y+thickness/2, height/2)),
@@ -316,9 +337,9 @@ def add_simple_room(stage, half_x=8.0, half_y=6.0, height=3.0, thickness=0.3):
         t.Set(Gf.Vec3d(*pos))
         prim = stage.GetPrimAtPath(path)
         UsdPhysics.CollisionAPI.Apply(prim)
-        # 静态碰撞体 = 只有 CollisionAPI，不加 RigidBodyAPI
-        # （加了 RigidBodyAPI 并 disabled 会导致物理行为异常）
-    print(f"[isaac_scene] ✅ 房间生成 {half_x*2}×{half_y*2}m，含碰撞箱", flush=True)
+        # 绑定材质 → Storm 渲染器下显示为实体灰色
+        UsdShade.MaterialBindingAPI.Apply(prim).Bind(wall_mat)
+    print(f"[isaac_scene] ✅ 房间生成 {half_x*2}×{half_y*2}m，含碰撞箱+材质", flush=True)
 
 
 def main():

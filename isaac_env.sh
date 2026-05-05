@@ -26,6 +26,12 @@ NO_RVIZ=false
 
 [[ ! -f "$ISAAC_PYTHON" ]] && { echo "❌ 找不到 $ISAAC_PYTHON"; exit 1; }
 
+# 清理可能残留的旧进程（防止重复启动导致多个 pc2scan/slam_toolbox 实例）
+echo "🧹 清理旧进程..."
+pkill -9 -f "pc2scan.py" 2>/dev/null
+pkill -9 -f "async_slam_toolbox" 2>/dev/null
+sleep 1
+
 source /opt/ros/humble/setup.bash
 source "$ROBOT_WS/install/setup.bash"
 

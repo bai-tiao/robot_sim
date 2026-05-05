@@ -20,8 +20,9 @@ navigation.launch.py
 """
 
 import os
+import sys
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
@@ -54,35 +55,37 @@ def generate_launch_description():
     mode = LaunchConfiguration('mode')
     use_sim_time = LaunchConfiguration('use_sim_time')
 
-    # ── PointCloud2 → LaserScan ───────────────────────────────
-    # Isaac PhysX LiDAR (16线 ±15°) 发布 /lidar/points (PointCloud2)
-    # 这里将其投影为 /scan (LaserScan) 供 slam_toolbox 和 Nav2 使用
-    # min_height/max_height 选取接近地面水平面的点（高度相对 lidar_link 坐标系）
-    pointcloud_to_laserscan = Node(
-        package='pointcloud_to_laserscan',
-        executable='pointcloud_to_laserscan_node',
-        name='pointcloud_to_laserscan',
-        output='screen',
-        remappings=[
-            ('cloud_in', '/lidar/points'),
-            ('scan',     '/scan'),
+    # ── PointCloud2 → LaserScan (Python 实现) ───────────────────
+    # 用自定义 Python 节点替代 C++ pointcloud_to_laserscan_node
+    # 原因：C++ 节点与 Isaac OmniGraph (RELIABLE QoS) 存在兼容性问题，
+    #       Python 节点可显式指定 RELIABLE 订阅，无 TF 依赖，无时间戳问题
+    # 注意：必须用系统 python3（/opt/ros/humble 环境），
+    #       Isaac Python 环境的 rclpy/sensor_msgs 版本与 Humble 不一定兼容
+    _pc2scan_script = os.path.join(
+        get_package_share_directory('isaac_bridge'), 'scripts', 'pc2scan.py')
+    pointcloud_to_laserscan = ExecuteProcess(
+        cmd=[
+            '/usr/bin/python3.10', _pc2scan_script,
+            '--ros-args',
+            '-r', 'cloud_in:=/lidar/points',
+            '-r', 'scan:=/scan',
+            '-p', 'min_height:=-0.3',
+            '-p', 'max_height:=0.3',
+            '-p', 'angle_min:=-3.1416',
+            '-p', 'angle_max:=3.1416',
+            '-p', 'angle_increment:=0.00349',
+            '-p', 'range_min:=0.1',
+            '-p', 'range_max:=50.0',
+            '-p', 'use_inf:=true',
+            '-p', 'use_sim_time:=true',
         ],
-        parameters=[{
-            'use_sim_time': use_sim_time,
-            # base_footprint 坐标系下做高度切片，与雷达安装角度无关
-            # 取机器人高度 0.1m~0.7m 范围（覆盖从底盘上沿到雷达）
-            'target_frame': 'base_footprint',
-            'transform_tolerance': 0.5,
-            'min_height': 0.1,     # 离地 0.1m 以上（过滤地面）
-            'max_height': 0.7,     # 离地 0.7m 以下（过滤天花板）
-            'angle_min':  -1.5708, # -90°（前半圆）
-            'angle_max':   1.5708, # +90°
-            'angle_increment': 0.00349,  # 0.2°
-            'scan_time':  0.1,
-            'range_min':  0.1,
-            'range_max':  50.0,
-            'use_inf':    True,
-        }],
+        output='screen',
+        additional_env={
+            # 追加 ROS2 Humble 的包路径（不覆盖已有 PYTHONPATH，避免丢失 workspace 包）
+            'PYTHONPATH': '/opt/ros/humble/local/lib/python3.10/dist-packages:'
+                          '/opt/ros/humble/lib/python3.10/site-packages:'
+                          + os.environ.get('PYTHONPATH', ''),
+        }
     )
 
     # ── Nav2 核心导航节点 ─────────────────────────────────────

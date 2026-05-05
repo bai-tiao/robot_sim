@@ -254,6 +254,9 @@ local_costmap:
       always_send_full_costmap: true
 
 # ── 全局代价地图 ──────────────────────────────────────────────
+# rolling_window:true  → 地图窗口跟随机器人移动，机器人始终在窗口中心
+# 代价: 无法积累全局静态地图；适合仿真探索阶段
+# 注: rolling_window 与 static_layer 互斥，static_layer 已移除
 global_costmap:
   global_costmap:
     ros__parameters:
@@ -265,14 +268,10 @@ global_costmap:
       robot_radius: 0.22
       resolution: 0.05
       track_unknown_space: true
-      # rolling_window: false（不能与 static_layer 同时开启）
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: true
-        enabled: true
-        subscribe_to_updates: true
-        transform_tolerance: 1.0
+      rolling_window: true   # 跟随机器人，机器人始终在窗口中心，永不超界
+      width: 20              # 20×20m 窗口，覆盖仿真房间
+      height: 20
+      plugins: ["obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true

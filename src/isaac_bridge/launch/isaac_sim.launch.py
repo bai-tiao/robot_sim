@@ -53,11 +53,12 @@ def generate_launch_description():
     isaac_sim = ExecuteProcess(
         cmd=[
             _ISAAC_PYTHON, _SCRIPT,
-            '--/renderer/enabled=0',                      # ← 关闭光追，50系稳定
+            # Storm 渲染器在 SimulationApp 内部设置，此处不再覆盖 renderer
             '--/app/renderer/resolution/width=1280',
             '--/app/renderer/resolution/height=720',
             '--/persistent/isaac/asset_root/default=',   # 跳过 Nucleus 检查
         ],
+        # 注：RTX 禁用通过 SimulationApp renderer="Storm" 实现，见 isaac_scene.py
         output='screen',
         additional_env={
             'DISPLAY': os.environ.get('DISPLAY', ':0'),
