@@ -22,15 +22,19 @@ class Pc2ScanNode(Node):
     def __init__(self):
         super().__init__('pc2scan')
         # ── 参数 ──────────────────────────────────────────────
-        self.declare_parameter('min_height',      -2.0)
-        self.declare_parameter('max_height',       2.0)
-        self.declare_parameter('angle_min',       -1.5708)
-        self.declare_parameter('angle_max',        1.5708)
+        self.declare_parameter('min_height',      -0.1)   # 世界坐标系下，地面以上 0.1m
+        self.declare_parameter('max_height',       1.5)   # 世界坐标系下，障碍物上限
+        self.declare_parameter('angle_min',       -3.1416)
+        self.declare_parameter('angle_max',        3.1416)
         self.declare_parameter('angle_increment',  0.00349)
         self.declare_parameter('scan_time',        0.1)
         self.declare_parameter('range_min',        0.1)
         self.declare_parameter('range_max',       50.0)
         self.declare_parameter('use_inf',          True)
+        # lidar_pitch: lidar_link 相对于机器人本体的俯仰角(rad)
+        # 仿真模式 pitch=0.0 (水平)，z_lidar == z_world，不需补偿
+        # 真实机器人部署时改为 -0.4947 rad (-28.3°)
+        self.declare_parameter('lidar_pitch',      0.0)
 
         self.min_height      = self.get_parameter('min_height').value
         self.max_height      = self.get_parameter('max_height').value
@@ -41,6 +45,11 @@ class Pc2ScanNode(Node):
         self.range_min       = self.get_parameter('range_min').value
         self.range_max       = self.get_parameter('range_max').value
         self.use_inf         = self.get_parameter('use_inf').value
+        pitch                = self.get_parameter('lidar_pitch').value
+        # 静态旋转矩阵（绕 Y 轴旋转 -pitch，将 lidar 坐标系 z 换算到世界坐标系 z）
+        # z_world ≈ -x_lidar * sin(pitch) + z_lidar * cos(pitch)
+        self._cp = math.cos(pitch)   # cos(-0.4947) ≈  0.8788
+        self._sp = math.sin(pitch)   # sin(-0.4947) ≈ -0.4772
 
         # RELIABLE QoS —— 与 Isaac OmniGraph RELIABLE 发布者匹配
         reliable_qos = QoSProfile(
@@ -95,8 +104,10 @@ class Pc2ScanNode(Node):
             # NaN/Inf 跳过
             if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)):
                 continue
-            # 高度过滤
-            if z < self.min_height or z > self.max_height:
+            # 将 lidar 坐标系的 z 补偿到近似世界坐标系
+            # z_world ≈ -x*sin(pitch) + z*cos(pitch)（绕Y轴逆旋转，消除俯仰角）
+            z_world = -x * self._sp + z * self._cp
+            if z_world < self.min_height or z_world > self.max_height:
                 continue
             # 距离
             r = math.hypot(x, y)

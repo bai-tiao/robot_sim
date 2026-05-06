@@ -131,7 +131,8 @@ def load_robot(world):
     cfg.fix_base                       = False   # 差速底盘，不固定根节点
     cfg.make_default_prim              = True
     cfg.self_collision                 = False
-    cfg.create_physics_scene           = True
+    # ★ False 必须：World() 已创建 PhysicsScene，再创建第二个会导致机器人和墙壁处于不同物理场景 → 穿墙
+    cfg.create_physics_scene           = False
     cfg.default_drive_strength         = 1047.19751
     cfg.default_position_drive_damping = 52.35988
     # 设置默认驱动类型为速度驱动（1=位置, 2=速度）
@@ -313,33 +314,35 @@ def _make_material(stage, mat_path, rgb=(0.8, 0.8, 0.8), roughness=0.6, metallic
     return material
 
 
-def add_simple_room(stage, half_x=8.0, half_y=6.0, height=3.0, thickness=0.3):
-    """用 USD PhysicsAPI 生成四面墙 + 碰撞箱，含材质（Storm 渲染器下显示为实体）"""
-    from pxr import UsdGeom, UsdPhysics, UsdShade, Gf, Sdf
+def add_simple_room(world, half_x=8.0, half_y=6.0, height=3.0, thickness=0.3):
+    """
+    用 Isaac FixedCuboid 生成四面墙。
+    FixedCuboid 内部正确创建 visual mesh + PhysX 碰撞体，
+    避免手动 UsdGeom.Cube+XformOp Scale 导致 PhysX 无法推导碰撞尺寸的问题。
+    LiDAR 能扫到、小车不会穿墙、Storm 渲染器下显示实体。
+    """
+    import numpy as np
+    from isaacsim.core.api.objects import FixedCuboid
 
-    # 预建材质（浅灰色墙面，Storm 渲染器下显示为实体）
-    wall_mat  = _make_material(stage, "/World/Looks/WallMat",  rgb=(0.82, 0.82, 0.82))
+    wall_color = np.array([0.82, 0.82, 0.82])   # 浅灰色
 
     walls = [
-        # (name, size_xyz,       translate_xyz)
-        ("wall_N", (half_x*2+thickness*2, thickness, height), (0,  half_y+thickness/2, height/2)),
-        ("wall_S", (half_x*2+thickness*2, thickness, height), (0, -half_y-thickness/2, height/2)),
-        ("wall_E", (thickness, half_y*2, height),             ( half_x+thickness/2, 0, height/2)),
-        ("wall_W", (thickness, half_y*2, height),             (-half_x-thickness/2, 0, height/2)),
+        # (name,    scale_xyz(宽/深/高),                          position_xyz)
+        ("wall_N", (half_x*2+thickness*2, thickness,  height),  (0.0,  half_y + thickness/2,  height/2)),
+        ("wall_S", (half_x*2+thickness*2, thickness,  height),  (0.0, -half_y - thickness/2,  height/2)),
+        ("wall_E", (thickness,  half_y*2,              height),  ( half_x + thickness/2, 0.0,  height/2)),
+        ("wall_W", (thickness,  half_y*2,              height),  (-half_x - thickness/2, 0.0,  height/2)),
     ]
-    for name, size, pos in walls:
-        path = f"/World/Room/{name}"
-        cube = UsdGeom.Cube.Define(stage, path)
-        cube.GetSizeAttr().Set(1.0)
-        xf = cube.AddXformOp(UsdGeom.XformOp.TypeScale)
-        xf.Set(Gf.Vec3f(*size))
-        t = cube.AddXformOp(UsdGeom.XformOp.TypeTranslate)
-        t.Set(Gf.Vec3d(*pos))
-        prim = stage.GetPrimAtPath(path)
-        UsdPhysics.CollisionAPI.Apply(prim)
-        # 绑定材质 → Storm 渲染器下显示为实体灰色
-        UsdShade.MaterialBindingAPI.Apply(prim).Bind(wall_mat)
-    print(f"[isaac_scene] ✅ 房间生成 {half_x*2}×{half_y*2}m，含碰撞箱+材质", flush=True)
+    for name, scale, pos in walls:
+        world.scene.add(FixedCuboid(
+            prim_path=f"/World/Room/{name}",
+            name=f"room_{name}",
+            position=np.array(pos, dtype=float),
+            scale=np.array(scale, dtype=float),
+            color=wall_color,
+        ))
+    print(f"[isaac_scene] ✅ 房间生成 {half_x*2:.0f}×{half_y*2:.0f}m "
+          f"（FixedCuboid × 4，含 PhysX 碰撞 + visual mesh）", flush=True)
 
 
 def main():
@@ -362,8 +365,8 @@ def main():
         add_reference_to_stage(usd_path=scene_usd, prim_path="/World/Environment")
         print(f"[isaac_scene] 场景: {scene_usd}", flush=True)
     else:
-        import omni.usd
-        add_simple_room(omni.usd.get_context().get_stage())
+        # ★ 必须在 world.reset() 之前调用：FixedCuboid 需要在 reset() 前加入 scene
+        add_simple_room(world)
 
     # 导入机器人 URDF
     imported_prim = load_robot(world)   # 返回 prim 路径字符串或 None
@@ -597,15 +600,20 @@ def main():
             sim_nsec = int((sim_t - sim_sec) * 1e9)
             now_ns   = sim_sec * 1_000_000_000 + sim_nsec
 
-            # 单调时间戳过滤（防止重复帧写入 tf2 缓冲）
-            if now_ns <= _last_stamp_ns[0]:
-                _loop_end = _time.monotonic()
-                _sleep = _PHYS_DT - (_loop_end - _loop_start)
-                if _sleep > 0:
-                    _time.sleep(_sleep)
-                continue
-            dt = (now_ns - _last_stamp_ns[0]) * 1e-9 if _last_stamp_ns[0] > 0 else _PHYS_DT
-            _last_stamp_ns[0] = now_ns
+            # sim_time 归零检测：仿真重启时 world.current_time 会从大应回到小
+            # 必须重置 _last_stamp_ns，否则 now_ns 永远 <= 旧大値 → TF 永久卡死
+            if now_ns < _last_stamp_ns[0] - 1_000_000_000:   # 后退超过 1科 → 判定为重启
+                print(f"[isaac_scene] sim_time 归零检测，重置 TF 时间戳: {_last_stamp_ns[0]/1e9:.2f}→{now_ns/1e9:.2f}", flush=True)
+                _last_stamp_ns[0] = 0
+
+            # dt 计算（时间未推进时用上一帧 dt）
+            if now_ns > _last_stamp_ns[0]:
+                dt = (now_ns - _last_stamp_ns[0]) * 1e-9 if _last_stamp_ns[0] > 0 else _PHYS_DT
+                _last_stamp_ns[0] = now_ns
+            else:
+                # 时间没推进：使用同一时间戳重新发布 TF，确保点云的时间戳 T 始终有对应 TF
+                # tf2 对重复时间戳只会输出警告，不会导致 RViz 丢帧
+                dt = _PHYS_DT
             stamp = RclpyTime(nanoseconds=now_ns).to_msg()
 
             # ── 5. 读取真实位姿，计算 odom ─────────────────────────

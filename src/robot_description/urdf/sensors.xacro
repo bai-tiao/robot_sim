@@ -37,16 +37,12 @@
   </link>
 
   <!-- lidar_link 挂载在 top_plate_link
-       位置由外参标定矩阵反推(锁定相机位置, 推算雷达位置):
-         相机已知(top_plate): x=0.15, y=0.0, z=0.019
-         雷达位置 = 相机位置 - R_pitch(-28.3°) * t
-         结果: x=-0.006m, y=-0.037m, z=0.027m
-         即雷达在相机后方偏右，与相机几乎等高 (与实物吕合)
-       rpy pitch=-0.4947 rad (-28.3°): 由外参矩阵第3列反推 -->
+       仿真模式: pitch=0 水平安装，16线垂直张角均匀分布在墙壁高度范围内，能扫描到墙壁
+       真实机器人: rpy="0 -0.4947 0" (-28.3°)，由外参标定反推，部署时恢复 -->
   <joint name="lidar_joint" type="fixed">
     <parent link="top_plate_link"/>
     <child  link="lidar_link"/>
-    <origin xyz="${lidar_x} ${lidar_y} ${top_plate_height/2 + lidar_height/2 + 0.008}" rpy="0 -0.4947 0"/>
+    <origin xyz="${lidar_x} ${lidar_y} ${top_plate_height/2 + lidar_height/2 + 0.008}" rpy="0 0 0"/>
   </joint>
 
   <!-- Gazebo 3D激光雷达传感器插件 -->
