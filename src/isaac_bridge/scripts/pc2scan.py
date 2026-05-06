@@ -31,10 +31,10 @@ class Pc2ScanNode(Node):
         self.declare_parameter('range_min',        0.1)
         self.declare_parameter('range_max',       50.0)
         self.declare_parameter('use_inf',          True)
-        # lidar_pitch: lidar_link 相对于机器人本体的俯仰角(rad)
-        # 仿真模式 pitch=0.0 (水平)，z_lidar == z_world，不需补偿
-        # 真实机器人部署时改为 -0.4947 rad (-28.3°)
-        self.declare_parameter('lidar_pitch',      0.0)
+        # lidar_pitch: lidar_link 相对于机器人本体的俧仰角(rad)
+        # URDF sensors.xacro: rpy="0 -0.4947 0" → pitch = -0.4947 rad (-28.3°)斜向上
+        # pc2scan 用此角补偿，将 z_lidar 还原为近似世界坐标系中的高度
+        self.declare_parameter('lidar_pitch',     -0.4947)
 
         self.min_height      = self.get_parameter('min_height').value
         self.max_height      = self.get_parameter('max_height').value
@@ -124,10 +124,12 @@ class Pc2ScanNode(Node):
                 ranges[idx] = r
 
         scan = LaserScan()
-        # 使用节点当前时间（与 TF 同步）而不是直接复制点云时间戳
-        # 原因：点云时间戳来自 Isaac OmniGraph，可能略早于 RSP 发布的 TF，
-        #       导致 slam_toolbox / RViz 的 TF 查找失败（"queue is full" 警告）
-        scan.header.stamp    = self.get_clock().now().to_msg()
+        # ★ 必须使用点云自带时间戳，不能用 get_clock().now()
+        # 原因：slam_toolbox 在查找 scan 对应的 TF 时，用的是 scan.header.stamp
+        #       Isaac OmniGraph 发布 /lidar/points 与发布 /clock 是同一帧，时间戳一致
+        #       如果改用节点时钟，scan 时间戳 > TF 时间戳 → slam_toolbox 找不到对应 TF
+        #       → 建图时每帧位姿错误 → 地图重叠严重
+        scan.header.stamp    = msg.header.stamp
         scan.header.frame_id = msg.header.frame_id
         scan.angle_min       = self.angle_min
         scan.angle_max       = self.angle_max

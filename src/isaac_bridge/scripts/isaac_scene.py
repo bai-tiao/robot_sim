@@ -87,15 +87,24 @@ print(f"[isaac_scene] offline_kit={_OFFLINE_KIT or '(默认)'}", flush=True)
 from isaacsim import SimulationApp
 app = SimulationApp({
     "headless": _HEADLESS,
-    # Storm = OpenGL/Hydra 渲染器，不依赖 RTX，对 50 系显卡兼容性最好
-    # RayTracedLighting = RTX 渲染器（50 系有兼容性问题，会导致线框/黑屏）
-    "renderer": "Storm",
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 渲染器选择说明:
+    #   Storm           = 默认，50系(Blackwell)/任何显卡均可，支持 PhysX LiDAR 3D 点云
+    #   RayTracedLighting = RTX渲染，40系(Ada/Ampere)验证OK，50系不稳定(Isaac 4.5未适配)
+    #
+    # ★ 换到 40 系显卡(RTX 40xx)完整步骤：
+    #   1. 改此处为 "RayTracedLighting"（或设环境变量 ISAAC_RENDERER=RayTracedLighting）
+    #   2. add_lidar() 改为 RTX 模式（IsaacSensorCreateRtxLidar + rep.create.render_product）
+    #   3. build_ros2_graph() 改为 ROS2RtxLidarHelper
+    #   仅改第1步可恢复可视化(小车/墙壁显示)，但 LiDAR 数据还需改第2/3步才有数据
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    "renderer": os.environ.get("ISAAC_RENDERER", "Storm"),
     "width": 1280,
     "height": 720,
     "anti_aliasing": 0,
     "experience": _OFFLINE_KIT,
 })
-print("[isaac_scene] SimulationApp ready (renderer=Storm/OpenGL)", flush=True)
+print(f"[isaac_scene] SimulationApp ready (renderer={os.environ.get('ISAAC_RENDERER','Storm')})", flush=True)
 
 import omni.graph.core as og
 from isaacsim.core.api import World
@@ -155,84 +164,81 @@ def load_robot(world):
         return None
 
 
-def add_lidar(robot_ok, lidar_prim):
-    """在 lidar_link 下创建 PhysX 旋转 LiDAR sensor（不需要渲染管线）"""
+def add_lidar(robot_ok, lidar_prim_path):
+    """
+    创建 PhysX LiDAR（Storm 渲染器，支持真实 3D 多线点云）。
+    关键：必须用 PhysX 传感器创建命令（RangeSensorCreateLidar），
+    否则用 RTX sensor prim + PhysX reader 会导致 z 全为 0（类型不匹配）。
+    返回 lidar prim 路径供 OmniGraph 的 IsaacReadLidarPointCloud 使用。
+    """
     if not robot_ok:
         return ""
     import omni.kit.commands, omni.usd
-    from pxr import Gf
+    from pxr import UsdGeom
 
     stage = omni.usd.get_context().get_stage()
 
-    # 确认 parent prim 存在；URDF importer 路径可能与预期不同
-    parent = lidar_prim.rsplit("/", 1)[0]
-    leaf   = lidar_prim.rsplit("/", 1)[-1]
+    # 确认 lidar_link parent prim
+    parent = lidar_prim_path.rsplit("/", 1)[0]
+    leaf   = lidar_prim_path.rsplit("/", 1)[-1]
     parent_p = stage.GetPrimAtPath(parent)
-    print(f"[isaac_scene] LiDAR parent={parent} valid={parent_p and parent_p.IsValid()} "
-          f"type={parent_p.GetTypeName() if parent_p and parent_p.IsValid() else 'N/A'}", flush=True)
     if not (parent_p and parent_p.IsValid()):
-        # 搜索 lidar_link prim（排除 joint）
-        print(f"[isaac_scene] ⚠️  parent {parent} 不存在，搜索 lidar_link...", flush=True)
+        print(f"[isaac_scene] ⚠️  lidar parent {parent} 不存在，搜索 lidar_link...", flush=True)
         for p in stage.Traverse():
             if "lidar_link" in p.GetName().lower() and "joint" not in p.GetTypeName().lower():
                 parent = str(p.GetPath())
-                lidar_prim = f"{parent}/{leaf}"
-                print(f"[isaac_scene]   找到 lidar_link prim: {parent} type={p.GetTypeName()}", flush=True)
+                lidar_prim_path = f"{parent}/{leaf}"
+                print(f"[isaac_scene]   找到 lidar_link: {parent}", flush=True)
                 break
         else:
-            # 打印所有 robot/lidar 相关 prim 用于诊断
-            all_prims = [(str(p.GetPath()), p.GetTypeName()) for p in stage.Traverse()
-                         if "diff_drive" in str(p.GetPath()).lower() or "lidar" in str(p.GetPath()).lower()]
-            print("[isaac_scene] stage prim 列表 (lidar/robot):\n" +
-                  "\n".join(f"  {path} [{typ}]" for path, typ in all_prims[:30]), flush=True)
+            print("[isaac_scene] ❌ 找不到 lidar_link prim", flush=True)
             return ""
 
-    try:
-        success, sensor = omni.kit.commands.execute(
-            "RangeSensorCreateLidar",
-            path=leaf,
-            parent=parent,
-            min_range=0.1,
-            max_range=100.0,          # URDF: max=100m
-            draw_points=False,
-            draw_lines=False,
-            horizontal_fov=180.0,     # URDF: 前半圆 -90°~+90°
-            vertical_fov=30.0,        # URDF: ±15° = 30° 总垂直 FOV
-            horizontal_resolution=0.2, # URDF: 900点/180° = 0.2°
-            vertical_resolution=2.0,  # URDF: 16线/30° ≈ 2°
-            rotation_rate=10.0,       # URDF: 10Hz
-            high_lod=False,
-            yaw_offset=0.0,           # 朝前（与 URDF 关节方向一致）
-        )
-    except Exception as cmd_err:
-        print(f"[isaac_scene] ⚠️  PhysX LiDAR 命令异常: {cmd_err}", flush=True)
-        success = False
-        sensor  = None
-    if success:
-        actual = f"{parent}/{leaf}"
-        print(f"[isaac_scene] ✅ PhysX LiDAR 添加成功 → {actual}", flush=True)
-        return actual
-    else:
-        print(f"[isaac_scene] ⚠️  PhysX LiDAR 添加失败（命令执行出错）", flush=True)
-        return ""
+    lidar_prim_path = f"{parent}/{leaf}"
 
+    # 创建 PhysX LiDAR（omni.isaac.range_sensor 扩展提供此命令）
+    # RangeSensorCreateLidar / IsaacSensorCreateLidar 创建真正的 PhysX 传感器
+    # ★ 不能用 IsaacSensorCreateRtxLidar（RTX sensor + PhysX reader → z=0）
+    for cmd in ["RangeSensorCreateLidar", "IsaacSensorCreateLidar"]:
+        try:
+            success, sensor_prim = omni.kit.commands.execute(
+                cmd,
+                path=leaf,
+                parent=parent,
+                min_range=0.1,
+                max_range=30.0,
+                draw_points=False,
+                draw_lines=False,
+                high_lod=True,      # 高精度模式：启用多仰角射线
+                yaw_offset=0.0,
+                enable_semantics=False,
+            )
+            if success:
+                print(f"[isaac_scene] ✅ PhysX LiDAR ({cmd}) 创建: {lidar_prim_path}", flush=True)
+                # 通过 USD 属性配置 16 线 ±15°（VLP-16 兼容）
+                try:
+                    from pxr import Sdf
+                    prim = stage.GetPrimAtPath(lidar_prim_path)
+                    if prim and prim.IsValid():
+                        for attr, val in [
+                            ("numRows",        16),
+                            ("numCols",        1800),
+                            ("minElevation",  -15.0),
+                            ("maxElevation",   15.0),
+                            ("horizontalFov",  360.0),
+                            ("rotationRate",   10.0),
+                        ]:
+                            a = prim.GetAttribute(attr)
+                            if a and a.IsValid():
+                                a.Set(val)
+                        print("[isaac_scene]   LiDAR 16线 ±15° 配置完成", flush=True)
+                except Exception as e:
+                    print(f"[isaac_scene]   ⚠️ 属性配置失败（将用默认值）: {e}", flush=True)
+                return lidar_prim_path
+        except Exception as e:
+            print(f"[isaac_scene] ⚠️  {cmd} 失败: {e}", flush=True)
 
-def create_lidar_render_product(lidar_prim):
-    """PhysX LiDAR 不需要 render product，此函数仅做路径验证"""
-    try:
-        import omni.usd
-        stage = omni.usd.get_context().get_stage()
-        lp = stage.GetPrimAtPath(lidar_prim)
-        if lp and lp.IsValid():
-            print(f"[isaac_scene] PhysX LiDAR prim valid, type={lp.GetTypeName()} @ {lidar_prim}", flush=True)
-            return lidar_prim   # 返回 lidar prim 路径本身（不是 render product）
-        # 搜索任意 lidar prim
-        for p in stage.Traverse():
-            if "lidar" in p.GetName().lower():
-                print(f"[isaac_scene]   找到 LiDAR prim: {p.GetPath()} type={p.GetTypeName()}", flush=True)
-                return str(p.GetPath())
-    except Exception as e:
-        print(f"[isaac_scene] ⚠️  lidar prim 验证失败: {e}", flush=True)
+    print("[isaac_scene] ❌ PhysX LiDAR 全部创建方式失败", flush=True)
     return ""
 
 
@@ -256,9 +262,10 @@ def build_ros2_graph(robot_root, render_product_path=""):
     )
     print("[isaac_scene] ✅ ROS2 OmniGraph 就绪 | /clock", flush=True)
 
-    # /lidar/points — PhysX LiDAR OmniGraph: IsaacReadLidarPointCloud → ROS2PublishPointCloud
-    # 3D 半球形雷达 (16线 ±15°) 发布 PointCloud2，供 pointcloud_to_laserscan 转换为 /scan
-    if render_product_path:   # 此处 render_product_path 实为 lidar prim 路径
+    # /lidar/points — PhysX LiDAR OmniGraph
+    # IsaacReadLidarPointCloud → ROS2PublishPointCloud（Storm 渲染器，真实 3D 点云）
+    # render_product_path 此处实为 lidar prim 路径（由 add_lidar() 返回）
+    if render_product_path:
         try:
             og.Controller.edit(
                 {"graph_path": "/Graphs/LiDAR", "evaluator_name": "execution"},
@@ -270,31 +277,27 @@ def build_ros2_graph(robot_root, render_product_path=""):
                         ("pub",     "isaacsim.ros2.bridge.ROS2PublishPointCloud"),
                     ],
                     keys.CONNECT: [
-                        ("tick.outputs:tick",               "read.inputs:execIn"),
-                        ("read.outputs:execOut",            "pub.inputs:execIn"),
-                        ("simtime.outputs:simulationTime",  "pub.inputs:timeStamp"),
-                        ("read.outputs:data",               "pub.inputs:data"),   # 新版 API: data (旧版: pointCloudData)
+                        ("tick.outputs:tick",              "read.inputs:execIn"),
+                        ("read.outputs:execOut",           "pub.inputs:execIn"),
+                        ("simtime.outputs:simulationTime", "pub.inputs:timeStamp"),
+                        ("read.outputs:data",              "pub.inputs:data"),
                     ],
                     keys.SET_VALUES: [
-                        ("pub.inputs:topicName",  "/lidar/points"),
-                        ("pub.inputs:frameId",    "lidar_link"),
+                        ("pub.inputs:topicName", "/lidar/points"),
+                        ("pub.inputs:frameId",   "lidar_link"),
                     ],
                 },
             )
             # lidarPrim 是 target 类型，必须单独设置
-            import omni.usd
-            from pxr import Sdf
             read_node = og.Controller.node("/Graphs/LiDAR/read")
             if read_node.is_valid():
                 target_attr = read_node.get_attribute("inputs:lidarPrim")
-                if target_attr.is_valid():
+                if target_attr and target_attr.is_valid():
                     target_attr.set([render_product_path])
-                    print(f"[isaac_scene] lidarPrim target 设置成功: {render_product_path}", flush=True)
-                else:
-                    print(f"[isaac_scene] ⚠️  lidarPrim target 属性不存在", flush=True)
-            print(f"[isaac_scene] ✅ PhysX LiDAR OmniGraph 就绪 | /lidar/points PointCloud2 (lidar={render_product_path})", flush=True)
+                    print(f"[isaac_scene]   lidarPrim target: {render_product_path}", flush=True)
+            print(f"[isaac_scene] ✅ PhysX LiDAR OmniGraph 就绪 | /lidar/points (lidar={render_product_path})", flush=True)
         except Exception as e:
-            print(f"[isaac_scene] ⚠️  LiDAR OmniGraph 失败: {e}", flush=True)
+            print(f"[isaac_scene] ⚠️  PhysX LiDAR OmniGraph 失败: {e}", flush=True)
     else:
         print("[isaac_scene] ⚠️  无 lidar prim，跳过 /lidar/points OmniGraph", flush=True)
 
@@ -327,7 +330,7 @@ def add_simple_room(world, half_x=8.0, half_y=6.0, height=3.0, thickness=0.3):
     wall_color = np.array([0.82, 0.82, 0.82])   # 浅灰色
 
     walls = [
-        # (name,    scale_xyz(宽/深/高),                          position_xyz)
+        # (name,    scale_xyz,                                        position_xyz)
         ("wall_N", (half_x*2+thickness*2, thickness,  height),  (0.0,  half_y + thickness/2,  height/2)),
         ("wall_S", (half_x*2+thickness*2, thickness,  height),  (0.0, -half_y - thickness/2,  height/2)),
         ("wall_E", (thickness,  half_y*2,              height),  ( half_x + thickness/2, 0.0,  height/2)),
@@ -341,8 +344,7 @@ def add_simple_room(world, half_x=8.0, half_y=6.0, height=3.0, thickness=0.3):
             scale=np.array(scale, dtype=float),
             color=wall_color,
         ))
-    print(f"[isaac_scene] ✅ 房间生成 {half_x*2:.0f}×{half_y*2:.0f}m "
-          f"（FixedCuboid × 4，含 PhysX 碰撞 + visual mesh）", flush=True)
+    print(f"[isaac_scene] ✅ 房间生成 {half_x*2:.0f}×{half_y*2:.0f}m 四面墙（FixedCuboid）", flush=True)
 
 
 def main():
@@ -434,11 +436,11 @@ def main():
     for _ in range(10):
         app.update()
 
-    # ★ 验证 lidar prim 并确认实际路径
+    # ★ add_lidar() 返回 lidar prim 路径，直接传给 OmniGraph
     _render_product_path = ""
     if robot_ok:
         lidar_prim_path = _lidar_prim_path[0]   # 更新为 add_lidar 返回的实际路径
-        _render_product_path = create_lidar_render_product(lidar_prim_path)
+        _render_product_path = lidar_prim_path   # PhysX 模式：传入 lidar prim 路径
         for _ in range(3):
             app.update()
 
@@ -520,6 +522,7 @@ def main():
     _ros_node    = [None]
     _odom_pub    = [None]
     _tf_broadcaster = [None]
+    _map_odom_tf_template = [None]   # 主循环每帧发布 map→odom identity
     _pos_x = [0.0]; _pos_y = [0.0]; _yaw = [0.0]
     _last_t = [None]
     _last_stamp_ns = [0]   # 单调时间戳抑制 TF_OLD_DATA
@@ -543,6 +546,17 @@ def main():
         _ros_node[0].create_subscription(Twist, "/cmd_vel", _cb, 10)
         _odom_pub[0] = _ros_node[0].create_publisher(Odometry, "/odom", 10)
         _tf_broadcaster[0] = tf2_ros.TransformBroadcaster(_ros_node[0])
+
+        # map→odom identity TF 模板，主循环每帧动态发布
+        # 原因：StaticTransformBroadcaster 发布到 /tf_static（stamp=0）
+        #        slam_toolbox 发布到 /tf（当前时间戳）
+        #        tf2 优先用最新时间戳的 /tf 层 → slam 修正一直生效
+        # 修复：主循环每帧用当前俳真时间戳发布 identity，永远比 slam 10Hz 更新
+        _map_odom_tf_template[0] = TransformStamped()
+        _map_odom_tf_template[0].header.frame_id = "map"
+        _map_odom_tf_template[0].child_frame_id  = "odom"
+        _map_odom_tf_template[0].transform.rotation.w = 1.0   # identity
+        print("[isaac_scene] ✅ map→odom identity TF 将在主循环每帧动态发布（覆盖 slam_toolbox）", flush=True)
         print("[isaac_scene] ✅ /cmd_vel 订阅、/odom 发布、TF 就绪 (Python rclpy)", flush=True)
     except Exception as e:
         print(f"[isaac_scene] ⚠️  rclpy 初始化失败: {e}", flush=True)
@@ -624,6 +638,10 @@ def main():
                     # Isaac 四元数格式 scalar-first: [qw, qx, qy, qz]
                     qw, qx, qy, qz = float(quat[0]), float(quat[1]), float(quat[2]), float(quat[3])
 
+                    # ★ yaw 直接从 Isaac 四元数解算，不积分轮速
+                    # 确保 odom 位姿与 Isaac 物理位置完全一致
+                    yaw_raw = math.atan2(2*(qw*qz + qx*qy), 1 - 2*(qy*qy + qz*qz))
+
                     # 减去 odom 原点偏移
                     if _odom_origin[0] is not None:
                         ox, oy, oyaw = _odom_origin[0]
@@ -632,21 +650,24 @@ def main():
                         c, s = math.cos(-oyaw), math.sin(-oyaw)
                         px = c*dx - s*dy
                         py = s*dx + c*dy
+                        yaw_out = yaw_raw - oyaw
                     else:
                         px, py = float(pos[0]), float(pos[1])
+                        yaw_out = yaw_raw
 
-                    # 轮速反算底盘速度，积分 yaw
+                    # 轮速只用于计算速度（odom.twist），不再用于积分位置
                     joint_vels = _robot_art_holder[0].get_joint_velocities()
                     li, ri = _wheel_idx[0]
                     vl_a = float(joint_vels[li]) * WHEEL_RADIUS
                     vr_a = float(joint_vels[ri]) * WHEEL_RADIUS
                     vx  = (vl_a + vr_a) / 2.0
                     wz  = (vr_a - vl_a) / WHEEL_BASE
-                    _yaw[0]   += wz * dt
+
                     _pos_x[0]  = px
                     _pos_y[0]  = py
-                    qz_out = math.sin(_yaw[0] / 2)
-                    qw_out = math.cos(_yaw[0] / 2)
+                    _yaw[0]    = yaw_out
+                    qz_out = math.sin(yaw_out / 2)
+                    qw_out = math.cos(yaw_out / 2)
                     use_physics = True
                 except Exception:
                     pass
@@ -673,7 +694,7 @@ def main():
             odom_msg.twist.twist.angular.z   = wz
             _odom_pub[0].publish(odom_msg)
 
-            # ── 7. 发布 TF odom → base_footprint ───────────────────
+            # ── 7. 发布 TF odom → base_footprint ─────────────────────
             t = TransformStamped()
             t.header.stamp    = stamp
             t.header.frame_id = "odom"
@@ -684,6 +705,11 @@ def main():
             t.transform.rotation.z    = qz_out
             t.transform.rotation.w    = qw_out
             _tf_broadcaster[0].sendTransform(t)
+
+            # ── 8. 发布 map → odom identity TF（每帧动态发布，覆盖 slam_toolbox 10Hz）
+            if _map_odom_tf_template[0] is not None:
+                _map_odom_tf_template[0].header.stamp = stamp
+                _tf_broadcaster[0].sendTransform(_map_odom_tf_template[0])
 
         except Exception:
             pass

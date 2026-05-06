@@ -69,14 +69,14 @@ def generate_launch_description():
             '--ros-args',
             '-r', 'cloud_in:=/lidar/points',
             '-r', 'scan:=/scan',
-            '-p', 'min_height:=-0.1',     # 世界坐标系：地面以上 0.1m（过滤地面反射）
-            '-p', 'max_height:=1.5',      # 世界坐标系：障碍物上限 1.5m
-            '-p', 'lidar_pitch:=0.0',     # 仿真模式水平安装；z_lidar就是高度，不需补偿
-            '-p', 'angle_min:=-3.1416',
-            '-p', 'angle_max:=3.1416',
+            '-p', 'min_height:=-0.1',
+            '-p', 'max_height:=1.5',
+            '-p', 'lidar_pitch:=-0.4947',  # 与 URDF sensors.xacro lidar_joint rpy 一致
+            '-p', 'angle_min:=-1.5708',    # 前 180°: -90°～+90°，与真实雷达视野一致
+            '-p', 'angle_max:=1.5708',
             '-p', 'angle_increment:=0.00349',
             '-p', 'range_min:=0.1',
-            '-p', 'range_max:=20.0',
+            '-p', 'range_max:=30.0',
             '-p', 'use_inf:=true',
             '-p', 'use_sim_time:=true',
         ],

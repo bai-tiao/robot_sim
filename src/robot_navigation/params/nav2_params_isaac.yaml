@@ -247,9 +247,9 @@ local_costmap:
           clearing: true
           marking: true
           data_type: "LaserScan"
-          raytrace_max_range: 8.0
+          raytrace_max_range: 30.0   # 和 range_max 一致，确保身后已扫区域不会被误判为未知
           raytrace_min_range: 0.0
-          obstacle_max_range: 7.5
+          obstacle_max_range: 29.5
           obstacle_min_range: 0.0
       always_send_full_costmap: true
 
