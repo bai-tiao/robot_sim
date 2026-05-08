@@ -5,14 +5,14 @@ isaac_sim.launch.py — Isaac Sim 仿真启动文件
 
 话题对照（unity → isaac）:
   /state_estimation  →  /odom
-  /sensor_scan       →  /scan  (真实激光，有遮挡)
+    /sensor_scan       →  /scan  (由 pc2scan.py 从 /lidar/points 转换)
   /registered_scan   →  不再需要
-  TF: map→sensor     →  TF: odom→base_footprint
+    TF: map→sensor     →  TF: odom→base_footprint
 
 Nav2 使用时需修改 nav2_params.yaml:
   odom_topic: /odom
   robot_base_frame: base_footprint
-  global_frame: odom   (或 map，搭配 slam_toolbox)
+    global_frame: odom（local costmap）/ map（global costmap）
 """
 
 import os
@@ -46,19 +46,22 @@ def generate_launch_description():
     )
 
     # ── Isaac Sim 主进程 ──────────────────────────────────────────
-    # 关键参数说明：
-    #   --/renderer/enabled=0         关闭 RTX 光追，改用 Storm (OpenGL)
-    #   --/app/window/hideUi=0        显示 UI（headless=false 时）
-    #   --/persistent/isaac/asset_root/default  跳过 Nucleus 资产下载检查
+    # 渲染模式说明：
+    #   默认由 isaac_scene.py 的 SimulationApp 读取 ISAAC_RENDERER
+    #   未设置时默认 Storm；设置 ISAAC_RENDERER=RayTracedLighting 可切换 RTX
+    # 启动参数说明：
+    #   --/app/renderer/resolution/*  设置窗口分辨率
+    #   --/persistent/isaac/asset_root/default=  跳过 Nucleus 资产下载检查
     isaac_sim = ExecuteProcess(
         cmd=[
             _ISAAC_PYTHON, _SCRIPT,
-            # Storm 渲染器在 SimulationApp 内部设置，此处不再覆盖 renderer
+            # 渲染器由 isaac_scene.py 内部设置，此处不传 renderer 参数
+            # '--/renderer/enabled=0',                      # ← 关闭光追，50系稳定
             '--/app/renderer/resolution/width=1280',
             '--/app/renderer/resolution/height=720',
             '--/persistent/isaac/asset_root/default=',   # 跳过 Nucleus 检查
         ],
-        # 注：RTX 禁用通过 SimulationApp renderer="Storm" 实现，见 isaac_scene.py
+        # 注：最终渲染器以 isaac_scene.py 中 SimulationApp 配置为准
         output='screen',
         additional_env={
             'DISPLAY': os.environ.get('DISPLAY', ':0'),
@@ -66,18 +69,18 @@ def generate_launch_description():
         }
     )
 
-    # ── pointcloud_to_laserscan 不再需要 ─────────────────────────
-    # Isaac LiDAR 直接发布 /scan (LaserScan)，不需要转换节点
+    # ── PointCloud2 → LaserScan 转换在 robot_navigation 启动 ──────
+    # isaac_scene.py 发布 /lidar/points (PointCloud2)
+    # navigation.launch.py 中运行 pc2scan.py 生成 /scan
 
     # ── visualization_tools / octomap 已移除 ─────────────────────
     # 原 Unity 流程：map.ply → visualization_tools → octomap → /map
     # 现 Isaac 流程：/scan → slam_toolbox → /map（动态实时建图）
     # viz_tools 和 octomap 不再需要，且 map.ply 不存在会导致 launch 崩溃
 
-    # ── 静态 TF 占位 ──────────────────────────────────────────────────────────
-    # map→odom：slam_toolbox 会动态发布此 TF，这里不再添加静态占位
-    # （静态占位会被 slam_toolbox 的动态 TF 覆盖，但可能引起 TF 冲突警告）
-    # odom→base_footprint：由 isaac_scene.py 的 rclpy TF broadcaster 动态发布
+    # ── TF 说明 ───────────────────────────────────────────────────────────────
+    # map→odom：由 isaac_scene.py 在主循环动态发布 identity（抑制 slam 覆盖）
+    # odom→base_footprint：由 isaac_scene.py 基于 Isaac 物理真值动态发布
 
     return LaunchDescription([
         headless_arg,
@@ -85,5 +88,5 @@ def generate_launch_description():
         isaac_sim,
         # viz_tools 已移除（map.ply 不存在）
         # octomap 已移除（改用 slam_toolbox）
-        # map_to_odom_tf 已移除（slam_toolbox 发布动态 map→odom TF）
+        # map_to_odom_tf 节点已移除（由 isaac_scene.py 发布 map→odom）
     ])

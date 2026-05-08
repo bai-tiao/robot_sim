@@ -87,17 +87,22 @@ print(f"[isaac_scene] offline_kit={_OFFLINE_KIT or '(默认)'}", flush=True)
 from isaacsim import SimulationApp
 app = SimulationApp({
     "headless": _HEADLESS,
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # 渲染器选择说明:
-    #   Storm           = 默认，50系(Blackwell)/任何显卡均可，支持 PhysX LiDAR 3D 点云
-    #   RayTracedLighting = RTX渲染，40系(Ada/Ampere)验证OK，50系不稳定(Isaac 4.5未适配)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 渲染器选择（通过环境变量 ISAAC_RENDERER 切换）:
+    #   Storm             默认。OpenGL/Hydra，无光追，任何显卡可用。
+    #                     小车材质显示简单（无 PBR），速度最快。
+    #   RayTracedLighting 实时光追（RTX Interactive）。需 RTX 显卡。
+    #                     40 系验证可用，小车材质 PBR 正常显示。
+    #                     50 系(Blackwell) 在 Isaac 4.5 不稳定，预计 4.6+ 修复。
+    #   PathTracing       离线光追（RTX Accurate）。最高质量，每帧多次采样，
+    #                     速度慢，适合渲染截图，不适合实时仿真。
     #
-    # ★ 换到 40 系显卡(RTX 40xx)完整步骤：
-    #   1. 改此处为 "RayTracedLighting"（或设环境变量 ISAAC_RENDERER=RayTracedLighting）
+    # ★ 切到光追（40 系显卡）完整步骤：
+    #   1. 设 ISAAC_RENDERER=RayTracedLighting → 可视化恢复（小车/墙壁材质正常）
     #   2. add_lidar() 改为 RTX 模式（IsaacSensorCreateRtxLidar + rep.create.render_product）
     #   3. build_ros2_graph() 改为 ROS2RtxLidarHelper
-    #   仅改第1步可恢复可视化(小车/墙壁显示)，但 LiDAR 数据还需改第2/3步才有数据
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    #   仅改第1步即可改善可视化，LiDAR 数据还需改第2/3步
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     "renderer": os.environ.get("ISAAC_RENDERER", "Storm"),
     "width": 1280,
     "height": 720,
