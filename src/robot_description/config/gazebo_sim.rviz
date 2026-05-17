@@ -5,9 +5,10 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /1
-        - /PointCloud21
+        - /GlobalPlan1
+        - /LocalPlan1
       Splitter Ratio: 0.5
-    Tree Height: 679
+    Tree Height: 663
 Visualization Manager:
   Class: ""
   Displays:
@@ -154,7 +155,7 @@ Visualization Manager:
       Color: 0; 255; 100
       Color Transformer: FlatColor
       Decay Time: 0
-      Enabled: true
+      Enabled: false
       Invert Rainbow: false
       Max Color: 255; 255; 255
       Max Intensity: 4096
@@ -175,7 +176,7 @@ Visualization Manager:
         Value: /lidar/points
       Use Fixed Frame: true
       Use rainbow: true
-      Value: true
+      Value: false
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
@@ -320,7 +321,7 @@ Visualization Manager:
       Head Diameter: 0.10000000149011612
       Head Length: 0.05000000074505806
       Length: 0.30000001192092896
-      Line Style: Lines
+      Line Style: Billboards
       Line Width: 0.029999999329447746
       Name: GlobalPlan
       Offset:
@@ -348,7 +349,7 @@ Visualization Manager:
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
       Length: 0.30000001192092896
-      Line Style: Lines
+      Line Style: Billboards
       Line Width: 0.029999999329447746
       Name: LocalPlan
       Offset:
@@ -366,7 +367,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: /local_plan
+        Value: /local_planner/best_traj
       Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
@@ -377,8 +378,8 @@ Visualization Manager:
       Axis: Z
       Channel Name: intensity
       Class: rviz_default_plugins/PointCloud2
-      Color: 255; 255; 255
-      Color Transformer: Intensity
+      Color: 255; 200; 0
+      Color Transformer: FlatColor
       Decay Time: 0
       Enabled: true
       Invert Rainbow: false
@@ -386,21 +387,42 @@ Visualization Manager:
       Max Intensity: 4096
       Min Color: 0; 0; 0
       Min Intensity: 0
-      Name: PointCloud2
+      Name: NonGroundCloud (/patchwork/non_ground)
       Position Transformer: XYZ
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.009999999776482582
-      Style: Flat Squares
+      Size (m): 0.05000000074505806
+      Style: Points
+      Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /patchwork/non_ground
+      Use Fixed Frame: true
+      Use rainbow: false
+      Value: true
+    - Alpha: 0.699999988079071
+      Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: GridMap (/grid_map/grid_map)
       Topic:
         Depth: 5
         Durability Policy: Volatile
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /lidar/points
-      Use Fixed Frame: true
-      Use rainbow: true
+        Value: /grid_map/grid_map
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /grid_map/grid_map_updates
+      Use Timestamp: false
       Value: true
   Enabled: true
   Global Options:
@@ -448,7 +470,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 13.982359886169434
+      Distance: 5.5358476638793945
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -463,18 +485,18 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.9297969341278076
+      Pitch: 0.36479803919792175
       Target Frame: base_footprint
       Value: Orbit (rviz)
-      Yaw: 4.583175182342529
+      Yaw: 3.685006618499756
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 900
+  Height: 884
   Hide Left Dock: false
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000001560000032afc0200000001fb000000100044006900730070006c006100790073010000003d0000032a000000c900ffffff000004e40000032a00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
-  Width: 1600
-  X: 93
-  Y: 276
+  QMainWindow State: 000000ff00000000fd0000000100000000000001560000031afc0200000001fb000000100044006900730070006c006100790073010000003d0000031a000000c900ffffff0000025a0000031a00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Width: 950
+  X: 889
+  Y: 104

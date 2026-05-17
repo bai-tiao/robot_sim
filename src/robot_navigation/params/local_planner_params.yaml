@@ -1,0 +1,57 @@
+# =============================================================
+# local_planner_params.yaml — local_planner_mine 参数
+# =============================================================
+# 适配机器人（来自 robot_params.xacro）：
+#   底盘半径: 0.203m
+#   轮距:     0.3507m
+#   最大线速: 0.5 m/s
+#   最大角速: 1.0 rad/s
+#
+# 话题接口：
+#   订阅: /state_estimation (map frame 绝对位姿, Odometry)
+#         /patchwork/non_ground (非地面点云, PointCloud2)
+#         /goal_pose (目标点, PoseStamped) — use_global_path=false 时
+#         /plan      (全局路径, Path)       — use_global_path=true  时
+#         /grid_map/grid_map (局部栅格地图, 内部话题)
+#   发布: /cmd_vel (速度指令, Twist)
+#         /local_planner/best_traj (可视化最优轨迹)
+#         /local_planner/goal_marker (可视化目标点)
+#         /grid_map/grid_map (局部栅格地图)
+# =============================================================
+
+my_planner_node:
+  ros__parameters:
+    use_sim_time: true
+
+    # ── 模式选择 ──────────────────────────────────────────────
+    # false: 订阅 /goal_pose，直接 DWA 到单点
+    # true:  订阅 /plan (goal_to_plan 转发自 Nav2 planner_server，与 dualmap 一致)
+    use_global_path: true
+    path_lookahead_dist: 2.0    # use_global_path=true 时的前瞻距离(m)
+
+    # ── DWA 速度参数 ───────────────────────────────────────────
+    dwa.max_linear_vel:    0.5   # m/s，与机器人规格一致
+    dwa.min_linear_vel:    0.0
+    dwa.max_angular_vel:   1.0   # rad/s
+    dwa.max_linear_acc:    0.5   # m/s²
+    dwa.max_angular_acc:   1.0   # rad/s²
+
+    # ── DWA 仿真参数 ───────────────────────────────────────────
+    dwa.sim_time:          2.0   # 前向仿真时间(s)
+
+    # ── DWA 评价权重 ───────────────────────────────────────────
+    dwa.w_heading:         0.15  # 朝向目标权重（降低避免强行对齐）
+    dwa.w_clearance:       0.4   # 间隙权重（提高，重视避障）
+    dwa.w_velocity:        0.25  # 速度权重（保持动量）
+    dwa.w_goal:            0.2   # 目标距离权重
+
+    # ── 到达判定 ───────────────────────────────────────────────
+    dwa.goal_tolerance_xy: 0.15  # m，到达阈值
+
+    # ── 转向阈值 ───────────────────────────────────────────────
+    # 目标偏角超过此值时，原地转向后再前进（防止后退）
+    dwa.turn_in_place_angle: 0.8 # rad ≈ 46°
+
+    # ── 机器人外接圆半径 ───────────────────────────────────────
+    # 膨胀半径 = robot_radius + 0.15m (在 InflateMap 中自动添加)
+    dwa.robot_radius:      0.22  # m（D1底盘0.203 + 安全余量）

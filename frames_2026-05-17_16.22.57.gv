@@ -1,0 +1,22 @@
+digraph G {
+"base_link" -> "left_wheel_link"[label=" Broadcaster: Authority undetectable\nAverage rate: 10.101\nBuffer length: 9.9\nMost recent transform: 1089.600057\nOldest transform: 1079.700056\n"];
+"base_footprint" -> "base_link"[label=" Broadcaster: Authority undetectable\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"base_link" -> "right_wheel_link"[label=" Broadcaster: Authority undetectable\nAverage rate: 10.101\nBuffer length: 9.9\nMost recent transform: 1089.600057\nOldest transform: 1079.700056\n"];
+"odom" -> "base_footprint"[label=" Broadcaster: Authority undetectable\nAverage rate: 60.1\nBuffer length: 9.983\nMost recent transform: 1089.616723\nOldest transform: 1079.63339\n"];
+"top_plate_link" -> "camera_link"[label=" Broadcaster: Authority undetectable\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"base_link" -> "top_plate_link"[label=" Broadcaster: Authority undetectable\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"camera_link" -> "camera_optical_link"[label=" Broadcaster: Authority undetectable\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"base_link" -> "front_caster_link"[label=" Broadcaster: Authority undetectable\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"base_link" -> "imu_link"[label=" Broadcaster: Authority undetectable\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"top_plate_link" -> "lidar_link"[label=" Broadcaster: Authority undetectable\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"base_link" -> "pillar_FL_link"[label=" Broadcaster: Authority undetectable\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"base_link" -> "pillar_FR_link"[label=" Broadcaster: Authority undetectable\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"base_link" -> "pillar_RL_link"[label=" Broadcaster: Authority undetectable\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"base_link" -> "pillar_RR_link"[label=" Broadcaster: Authority undetectable\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"base_link" -> "rear_caster_link"[label=" Broadcaster: Authority undetectable\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"map" -> "odom"[label=" Broadcaster: Authority undetectable\nAverage rate: 58.397\nBuffer length: 9.983\nMost recent transform: 1091.566723\nOldest transform: 1081.58339\n"];
+edge [style=invis];
+ subgraph cluster_legend { style=bold; color=black; label ="view_frames Result";
+"Recorded at time: 1779006177.7298448"[ shape=plaintext ] ;
+}->"map";
+}

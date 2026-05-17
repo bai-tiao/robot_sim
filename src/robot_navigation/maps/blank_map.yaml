@@ -1,0 +1,8 @@
+image: blank_map.pgm
+resolution: 0.05
+# origin: 地图左下角在世界坐标系中的位置
+# 100x100m 地图，机器人出生在 (0,0)，放在地图中心 → origin = (-50, -50)
+origin: [-50.0, -50.0, 0.0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196

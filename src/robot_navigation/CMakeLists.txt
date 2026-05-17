@@ -8,6 +8,7 @@ install(DIRECTORY
   config
   params
   scripts
+  maps
   DESTINATION share/${PROJECT_NAME}/
 )
 

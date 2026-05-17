@@ -1,78 +1,91 @@
 """
 navigation.launch.py
 ====================
-启动 Nav2 导航栈（Isaac Sim 模式）
+Isaac Sim 导航启动（完整 dualmap 架构）
 
-支持模式 (mode 参数):
-  isaac — Isaac Sim 仿真模式 (默认): slam_toolbox 在线建图 + Nav2 导航
-  nav   — 加载已有地图 + AMCL 定位 + 导航（真实机器人）
+数据流（与 dualmap_nav 完全一致）：
 
-用法:
-  # Isaac 仿真导航（默认）
-  ros2 launch robot_navigation navigation.launch.py use_sim_time:=true
+  /lidar/points → pc2scan.py → /scan ──────────────────────────────┐
+                             → /patchwork/non_ground ─→ GridMap     │
+  /state_estimation ─────────────────────→ GridMap + LocalPlanner   │
+                                           └─/grid_map/grid_map     │
+  /goal_pose → goal_to_plan → planner_server (/compute_path_to_pose)│
+                                   ↓ /plan                          │
+                              LocalPlanner (DWA) → /cmd_vel         │
+                                                                     │
+  /scan → slam_toolbox → /map ───→ global_costmap (static_layer) ←─┘
 
-  # 已有地图导航（真实机器人）
-  ros2 launch robot_navigation navigation.launch.py \\
-      mode:=nav map:=/path/to/map.yaml use_sim_time:=false
+定位模式：
+  ground_truth（默认）: isaac_scene.py 发布 /state_estimation + map→odom identity
+  slam:                 slam_toolbox scan_matching → TF，slam_pose_bridge → /state_estimation
+                        需同时设置 ISAAC_LOCALIZATION_MODE=slam 启动 isaac_sim
 
-全局规划: NavFn (A*)  — nav2_params_isaac.yaml
-局部规划: DWB         — nav2_params_isaac.yaml
+用法（通过 isaac_env.sh 自动调用，无需手动执行）：
+  ros2 launch robot_navigation navigation.launch.py            # ground_truth
+  ros2 launch robot_navigation navigation.launch.py mode:=slam # slam 定位
+
+RViz 发目标：
+  Tool Properties → 2D Goal Pose → Topic: /goal_pose
 """
 
 import os
-import sys
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
-from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
+_SYSTEM_PYTHON = '/usr/bin/python3.10'
+_ROS_PYTHONPATH = (
+    '/opt/ros/humble/local/lib/python3.10/dist-packages:'
+    '/opt/ros/humble/lib/python3.10/site-packages:'
+    + os.environ.get('PYTHONPATH', '')
+)
+
+
 def generate_launch_description():
 
     pkg_nav = get_package_share_directory('robot_navigation')
-    pkg_nav2_bringup = get_package_share_directory('nav2_bringup')
 
-    # ── 参数声明 ──────────────────────────────────────────────
-    mode_arg = DeclareLaunchArgument(
-        'mode', default_value='isaac',
-        description='运行模式: isaac=Isaac Sim仿真(slam_toolbox建图), nav=已有地图(真实机器人)'
-    )
     use_sim_time_arg = DeclareLaunchArgument(
         'use_sim_time', default_value='true',
-        description='true=Isaac Sim, false=真实机器人'
+        description='Isaac Sim 使用仿真时钟'
     )
-    map_arg = DeclareLaunchArgument(
-        'map', default_value='',
-        description='地图 yaml 文件路径 (mode=nav 时使用)'
+    mode_arg = DeclareLaunchArgument(
+        'mode', default_value='ground_truth',
+        description='ground_truth / slam / slam_map_only'
     )
-    params_arg = DeclareLaunchArgument(
-        'params_file',
-        default_value=os.path.join(pkg_nav, 'params', 'nav2_params.yaml'),
-        description='Nav2 参数文件'
-    )
-    mode = LaunchConfiguration('mode')
     use_sim_time = LaunchConfiguration('use_sim_time')
+    mode = LaunchConfiguration('mode')
+    # 与 dualmap_nav 一致：用 map_server 加载默认地图，不再依赖 slam_toolbox 动态地图尺寸
+    # blank_map.yaml: 100x100m 空白地图，机器人永远在地图范围内，彻底消除 out-of-bounds
+    map_server_node = Node(
+        package='nav2_map_server',
+        executable='map_server',
+        name='map_server',
+        output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'yaml_filename': os.path.join(pkg_nav, 'maps', 'blank_map.yaml'),
+        }],
+    )
+    # map_server 也是 lifecycle 节点，加入 lifecycle_manager 管理
 
-    # ── PointCloud2 → LaserScan (Python 实现) ───────────────────
-    # 用自定义 Python 节点替代 C++ pointcloud_to_laserscan_node
-    # 原因：C++ 节点与 Isaac OmniGraph (RELIABLE QoS) 存在兼容性问题，
-    #       Python 节点可显式指定 RELIABLE 订阅，无 TF 依赖，无时间戳问题
-    # 注意：必须用系统 python3（/opt/ros/humble 环境），
-    #       Isaac Python 环境的 rclpy/sensor_msgs 版本与 Humble 不一定兼容
-    _pc2scan_script = os.path.join(
+    # ── [1] pc2scan.py — /lidar/points → /scan + /patchwork/non_ground ──
+    _pc2scan = os.path.join(
         get_package_share_directory('isaac_bridge'), 'scripts', 'pc2scan.py')
-    pointcloud_to_laserscan = ExecuteProcess(
+    pc2scan_node = ExecuteProcess(
         cmd=[
-            '/usr/bin/python3.10', _pc2scan_script,
+            _SYSTEM_PYTHON, _pc2scan,
             '--ros-args',
             '-r', 'cloud_in:=/lidar/points',
             '-r', 'scan:=/scan',
+            '-r', 'nonground:=/patchwork/non_ground',
             '-p', 'min_height:=-0.1',
             '-p', 'max_height:=1.5',
-            '-p', 'lidar_pitch:=-0.4947',  # 与 URDF sensors.xacro lidar_joint rpy 一致
-            '-p', 'angle_min:=-1.5708',    # 前 180°: -90°～+90°，与真实雷达视野一致
+            '-p', 'lidar_pitch:=-0.4947',
+            '-p', 'angle_min:=-1.5708',
             '-p', 'angle_max:=1.5708',
             '-p', 'angle_increment:=0.00349',
             '-p', 'range_min:=0.1',
@@ -81,91 +94,122 @@ def generate_launch_description():
             '-p', 'use_sim_time:=true',
         ],
         output='screen',
-        additional_env={
-            # 追加 ROS2 Humble 的包路径（不覆盖已有 PYTHONPATH，避免丢失 workspace 包）
-            'PYTHONPATH': '/opt/ros/humble/local/lib/python3.10/dist-packages:'
-                          '/opt/ros/humble/lib/python3.10/site-packages:'
-                          + os.environ.get('PYTHONPATH', ''),
-        }
+        additional_env={'PYTHONPATH': _ROS_PYTHONPATH},
     )
 
-    # ── Nav2 核心导航节点 ─────────────────────────────────────
-    nav2_core = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(pkg_nav2_bringup, 'launch', 'navigation_launch.py')
-        ),
-        launch_arguments={
-            'use_sim_time': use_sim_time,
-            'autostart': 'false',
-            'params_file': LaunchConfiguration('params_file'),
-        }.items(),
-    )
-
-    # ── map_server + amcl (nav 模式) ──────────────────────────
-    map_server = Node(
-        package='nav2_map_server',
-        executable='map_server',
-        name='map_server',
+    # ── [2] slam_toolbox — /scan → /map + TF ────────────────────────────
+    # ground_truth 模式: 不启动！map_server 已提供 blank_map，两者同时发 /map 会冲突
+    # slam 模式:         启动 slam_toolbox 做定位+建图
+    # slam_map_only 模式: 建图模式（不启动规划器，只启动 slam_toolbox + pc2scan）
+    slam_toolbox = Node(
+        package='slam_toolbox',
+        executable='async_slam_toolbox_node',
+        name='slam_toolbox',
         output='screen',
-        parameters=[{
-            'use_sim_time': use_sim_time,
-            'yaml_filename': LaunchConfiguration('map'),
-        }],
-        condition=IfCondition(PythonExpression(["'", mode, "' == 'nav'"]))
+        parameters=[
+            os.path.join(pkg_nav, 'params', 'slam_toolbox_params.yaml'),
+            {'use_sim_time': use_sim_time},
+        ],
+        condition=IfCondition(PythonExpression(
+            ["'", mode, "' == 'slam' or '", mode, "' == 'slam_map_only'"]))
     )
 
-    amcl = Node(
-        package='nav2_amcl',
-        executable='amcl',
-        name='amcl',
+    # ── [3] planner_server (NavFn A*) — 与 dualmap lio_map_align 一致 ──
+    # slam_map_only 建图模式不启动规划器
+    _nav_active = PythonExpression(["'", mode, "' != 'slam_map_only'"])
+    planner_server = Node(
+        package='nav2_planner',
+        executable='planner_server',
+        name='planner_server',
         output='screen',
-        parameters=[LaunchConfiguration('params_file')],
-        condition=IfCondition(PythonExpression(["'", mode, "' == 'nav'"]))
+        parameters=[
+            os.path.join(pkg_nav, 'params', 'global_planner_params.yaml'),
+            {'use_sim_time': use_sim_time},
+        ],
+        condition=IfCondition(_nav_active),
     )
 
-    # ── Lifecycle Manager ─────────────────────────────────────
-    lifecycle_nodes_base = [
-        'controller_server', 'smoother_server', 'planner_server',
-        'behavior_server', 'bt_navigator', 'waypoint_follower',
-        'velocity_smoother',
-    ]
-    lifecycle_nodes_nav = ['map_server', 'amcl'] + lifecycle_nodes_base
-
-    lifecycle_mgr_isaac = Node(
+    # planner_server 是 lifecycle 节点，需要 lifecycle_manager 管理
+    lifecycle_mgr = Node(
         package='nav2_lifecycle_manager',
         executable='lifecycle_manager',
-        name='lifecycle_manager_navigation',
+        name='lifecycle_manager_planning',
         output='screen',
         parameters=[{
             'use_sim_time': use_sim_time,
             'autostart': True,
-            'node_names': lifecycle_nodes_base,
+            'node_names': ['map_server', 'planner_server'],
+            'bond_timeout': 0.0,
         }],
-        condition=IfCondition(PythonExpression(["'" , mode, "' == 'isaac'"]))
+        condition=IfCondition(_nav_active),
     )
-
-    lifecycle_mgr_nav = Node(
+    # 建图模式：只需 lifecycle 管理 map_server（给 RViz 显示地图用）
+    lifecycle_mgr_map = Node(
         package='nav2_lifecycle_manager',
         executable='lifecycle_manager',
-        name='lifecycle_manager_navigation',
+        name='lifecycle_manager_map',
         output='screen',
         parameters=[{
             'use_sim_time': use_sim_time,
             'autostart': True,
-            'node_names': lifecycle_nodes_nav,
+            'node_names': ['map_server'],
+            'bond_timeout': 0.0,
         }],
-        condition=IfCondition(PythonExpression(["'", mode, "' == 'nav'"]))
+        condition=IfCondition(PythonExpression(["'", mode, "' == 'slam_map_only'"])),
+    )
+
+    # ── [4] goal_to_plan — /goal_pose → planner action → /plan ──────────
+    _goal_to_plan = os.path.join(pkg_nav, 'scripts', 'goal_to_plan.py')
+    goal_to_plan = ExecuteProcess(
+        cmd=[
+            _SYSTEM_PYTHON, _goal_to_plan,
+            '--ros-args',
+            '-p', 'use_sim_time:=true',
+        ],
+        output='screen',
+        additional_env={'PYTHONPATH': _ROS_PYTHONPATH},
+        condition=IfCondition(_nav_active),
+    )
+
+    # ── [5] local_planner_mine — GridMap + DWA ──────────────────────────
+    local_planner = Node(
+        package='local_planner_mine',
+        executable='my_planner_node',
+        name='my_planner_node',
+        output='screen',
+        parameters=[
+            os.path.join(pkg_nav, 'params', 'local_planner_params.yaml'),
+        ],
+        # 导航指令发到 /nav_cmd_vel，isaac_scene.py 实现「键盘优先」逻辑
+        # 键盘 1 秒内有消息 → 用键盘；否则 → 用导航指令
+        remappings=[('/cmd_vel', '/nav_cmd_vel')],
+        condition=IfCondition(_nav_active),
+    )
+
+    # ── [6] slam_pose_bridge（slam 模式专用）────────────────────────────
+    _bridge = os.path.join(pkg_nav, 'scripts', 'slam_pose_bridge.py')
+    slam_pose_bridge = ExecuteProcess(
+        cmd=[
+            _SYSTEM_PYTHON, _bridge,
+            '--ros-args',
+            '-p', 'use_sim_time:=true',
+            '-p', 'publish_rate:=20.0',
+        ],
+        output='screen',
+        additional_env={'PYTHONPATH': _ROS_PYTHONPATH},
+        condition=IfCondition(PythonExpression(["'", mode, "' == 'slam'"]))
     )
 
     return LaunchDescription([
-        mode_arg,
         use_sim_time_arg,
-        map_arg,
-        params_arg,
-        pointcloud_to_laserscan,
-        nav2_core,
-        map_server,
-        amcl,
-        lifecycle_mgr_isaac,
-        lifecycle_mgr_nav,
+        mode_arg,
+        map_server_node,
+        pc2scan_node,
+        slam_toolbox,
+        planner_server,
+        lifecycle_mgr,
+        lifecycle_mgr_map,
+        goal_to_plan,
+        local_planner,
+        slam_pose_bridge,
     ])

@@ -42,7 +42,14 @@ def generate_launch_description():
     )
     use_sim_time_arg = DeclareLaunchArgument(
         'use_sim_time', default_value='true',
-        description='Isaac Sim 使用仿真时钟'
+        description='Isaac Sim 使用仳真时钟'
+    )
+    # 定位模式：传递给 isaac_scene.py 的环境变量 ISAAC_LOCALIZATION_MODE
+    # ground_truth（默认）: 发布 map→odom identity TF + /state_estimation
+    # slam:          不发 map→odom TF，不发 /state_estimation，由 slam_toolbox + slam_pose_bridge 提供
+    mode_arg = DeclareLaunchArgument(
+        'mode', default_value='ground_truth',
+        description='ground_truth / slam / fastlio'
     )
 
     # ── Isaac Sim 主进程 ──────────────────────────────────────────
@@ -55,17 +62,18 @@ def generate_launch_description():
     isaac_sim = ExecuteProcess(
         cmd=[
             _ISAAC_PYTHON, _SCRIPT,
-            # 渲染器由 isaac_scene.py 内部设置，此处不传 renderer 参数
-            # '--/renderer/enabled=0',                      # ← 关闭光追，50系稳定
             '--/app/renderer/resolution/width=1280',
             '--/app/renderer/resolution/height=720',
-            '--/persistent/isaac/asset_root/default=',   # 跳过 Nucleus 检查
+            '--/persistent/isaac/asset_root/default=',
         ],
-        # 注：最终渲染器以 isaac_scene.py 中 SimulationApp 配置为准
         output='screen',
         additional_env={
             'DISPLAY': os.environ.get('DISPLAY', ':0'),
             'ROBOT_WS': os.environ.get('ROBOT_WS', os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')),
+            # 定位模式传递给 isaac_scene.py
+            # ground_truth: 发 map→odom identity TF + /state_estimation
+            # slam:         不发 map→odom TF，不发 /state_estimation
+            'ISAAC_LOCALIZATION_MODE': os.environ.get('ISAAC_LOCALIZATION_MODE', 'ground_truth'),
         }
     )
 
@@ -85,8 +93,6 @@ def generate_launch_description():
     return LaunchDescription([
         headless_arg,
         use_sim_time_arg,
+        mode_arg,
         isaac_sim,
-        # viz_tools 已移除（map.ply 不存在）
-        # octomap 已移除（改用 slam_toolbox）
-        # map_to_odom_tf 节点已移除（由 isaac_scene.py 发布 map→odom）
     ])

@@ -1,5 +1,19 @@
 # slam_toolbox 在线异步建图参数
 # 文档: https://github.com/SteveMacenski/slam_toolbox
+#
+# 模式切换（通过修改下方两个参数）：
+#
+# ground_truth 模式（默认，纯建图）:
+#   use_scan_matching: false
+#   publish_map_odom_transform: false
+#   定位完全来自 isaac_scene.py ground truth
+#   slam 只负责绯制地图 /map，不参与定位
+#
+# slam 模式（模拟真实机器人定位链路）:
+#   use_scan_matching: true
+#   publish_map_odom_transform: true
+#   slam_toolbox 发布 map→odom TF，islam_pose_bridge 转为 /state_estimation
+#   isaac_scene.py 环境变量 ISAAC_LOCALIZATION_MODE=slam 时不发布 map→odom identity TF
 slam_toolbox:
   ros__parameters:
     # 使用异步模式，减少延迟
@@ -27,7 +41,9 @@ slam_toolbox:
 
     # 分辨率与范围
     resolution: 0.05
-    map_start_at_dock: true    # 地图以机器人初始位置为中心，避免机器人卡在地图边界
+    # map_start_at_dock: true  会把机器人放在地图像素(0,0)即左下角，导致可视化里机器人在彩色方块右下角
+    # map_start_at_dock: false 让 slam_toolbox 把机器人放在地图中心，四周都有足够空间，不会出界
+    map_start_at_dock: false
     max_laser_range: 20.0
     min_laser_range: 0.1
     minimum_time_interval: 0.3       # 降低频率要求，确保小车慢走时也能建图

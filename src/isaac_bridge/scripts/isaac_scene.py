@@ -524,6 +524,9 @@ def main():
     # 纯 Python cmd_vel 订阅 + odom/TF 发布
     _cmd_linear  = [0.0]
     _cmd_angular = [0.0]
+    _teleop_last_t = [0.0]      # 最后收到键盘消息的时间（monotonic）
+    _nav_linear  = [0.0]        # 导航指令（/nav_cmd_vel）
+    _nav_angular = [0.0]
     _ros_node    = [None]
     _odom_pub    = [None]
     _tf_broadcaster = [None]
@@ -545,11 +548,38 @@ def main():
                 rclpy.parameter.Parameter("use_sim_time", rclpy.parameter.Parameter.Type.BOOL, True)
             ]
         )
+        import time as _time_mod
         def _cb(msg):
-            _cmd_linear[0]  = msg.linear.x
-            _cmd_angular[0] = msg.angular.z
+            # 键盘话题：记录时间戳，1秒内优先于导航
+            _cmd_linear[0]   = msg.linear.x
+            _cmd_angular[0]  = msg.angular.z
+            _teleop_last_t[0] = _time_mod.monotonic()
+        def _nav_cb(msg):
+            # 导航话题：仅在键盘超过1秒没发时使用
+            _nav_linear[0]  = msg.linear.x
+            _nav_angular[0] = msg.angular.z
+            if _time_mod.monotonic() - _teleop_last_t[0] > 1.0:
+                _cmd_linear[0]  = _nav_linear[0]
+                _cmd_angular[0] = _nav_angular[0]
         _ros_node[0].create_subscription(Twist, "/cmd_vel", _cb, 10)
+        _ros_node[0].create_subscription(Twist, "/nav_cmd_vel", _nav_cb, 10)
         _odom_pub[0] = _ros_node[0].create_publisher(Odometry, "/odom", 10)
+
+        # 定位模式控制（通过环境变量 ISAAC_LOCALIZATION_MODE 切换）
+        # ground_truth（默认）: isaac_scene.py 自身发布 /state_estimation + map→odom identity TF
+        # slam:          slam_toolbox 接管定位， slam_pose_bridge 发布 /state_estimation
+        #                isaac_scene.py 只发布 odom→base_footprint TF（轮速里程计）
+        _LOC_MODE = os.environ.get("ISAAC_LOCALIZATION_MODE", "ground_truth")
+        print(f"[isaac_scene] 定位模式: {_LOC_MODE}", flush=True)
+
+        # /state_estimation: map frame 绝对坐标，供 local_planner_mine / GridMap 使用
+        # 注意：与 /odom 不同，这里不减去 odom 原点偏移，直接发布 Isaac get_world_pose() 原始值
+        # dualmap 里此话题来自 FASTLIO，坐标系为 map（绝对），与此保持一致
+        # slam 模式下由 slam_pose_bridge 提供，这里不创建
+        if _LOC_MODE == "ground_truth":
+            _state_est_pub = [_ros_node[0].create_publisher(Odometry, "/state_estimation", 10)]
+        else:
+            _state_est_pub = [None]  # slam/fastlio 模式下由外部节点提供
         _tf_broadcaster[0] = tf2_ros.TransformBroadcaster(_ros_node[0])
 
         # map→odom identity TF 模板，主循环每帧动态发布
@@ -557,11 +587,15 @@ def main():
         #        slam_toolbox 发布到 /tf（当前时间戳）
         #        tf2 优先用最新时间戳的 /tf 层 → slam 修正一直生效
         # 修复：主循环每帧用当前俳真时间戳发布 identity，永远比 slam 10Hz 更新
-        _map_odom_tf_template[0] = TransformStamped()
-        _map_odom_tf_template[0].header.frame_id = "map"
-        _map_odom_tf_template[0].child_frame_id  = "odom"
-        _map_odom_tf_template[0].transform.rotation.w = 1.0   # identity
-        print("[isaac_scene] ✅ map→odom identity TF 将在主循环每帧动态发布（覆盖 slam_toolbox）", flush=True)
+        # map→odom identity TF：ground_truth 模式才发布，slam 模式下由 slam_toolbox 自行发布
+        if _LOC_MODE == "ground_truth":
+            _map_odom_tf_template[0] = TransformStamped()
+            _map_odom_tf_template[0].header.frame_id = "map"
+            _map_odom_tf_template[0].child_frame_id  = "odom"
+            _map_odom_tf_template[0].transform.rotation.w = 1.0   # identity
+            print("[isaac_scene] ✅ map→odom identity TF 将在主循环每帧动态发布（覆盖 slam_toolbox）", flush=True)
+        else:
+            print(f"[isaac_scene] 定位模式={_LOC_MODE}，map→odom TF 由外部定位系统提供，跳过 identity 发布", flush=True)
         print("[isaac_scene] ✅ /cmd_vel 订阅、/odom 发布、TF 就绪 (Python rclpy)", flush=True)
     except Exception as e:
         print(f"[isaac_scene] ⚠️  rclpy 初始化失败: {e}", flush=True)
@@ -569,6 +603,12 @@ def main():
     WHEEL_RADIUS = 0.0625   # 驱动轮半径 0.0625m (Φ125mm)
     WHEEL_BASE   = 0.3507   # 轮距 0.17535×2 m
     _PHYS_DT     = 1.0 / 60.0   # 物理步长（秒）：限制仿真速度 ≈ 1× 真实时间
+
+    # ★ 右轮符号校正
+    # URDF 两轮都是 axis xyz="0 1 0"，理论上都用 +1。
+    # 若 Isaac Sim URDF 导入后右轮轴实际反向（机器人走圆弧而非直线），改为 -1。
+    # 判断方法：键盘给纯 linear.x，若机器人向右弧 → 改 -1；向左弧 → 改 +1（默认）。
+    RIGHT_WHEEL_SIGN = 1
 
     print("[isaac_scene] 主循环启动", flush=True)
     import math, time as _time
@@ -580,17 +620,23 @@ def main():
     while app.is_running():
         _loop_start = _time.monotonic()
 
-        # ── 1. 消费 ROS 消息（cmd_vel 等） ──────────────────────────
+        # ── 1. 处理待进 ROS 消息（非阻塞）
+        # 调用 2 次清空队列积压，过多会占用主循环时间导致物理步斑帧
         if _ros_node[0] is not None:
-            import rclpy
+            rclpy.spin_once(_ros_node[0], timeout_sec=0)
             rclpy.spin_once(_ros_node[0], timeout_sec=0)
 
         # ── 2. 下发车轮速度（physics 步前写入指令） ────────────────
         if _art_ctrl[0] is not None and _wheel_idx[0] is not None:
             try:
                 from isaacsim.core.utils.types import ArticulationAction
-                vl = (_cmd_linear[0] - _cmd_angular[0] * WHEEL_BASE / 2.0) / WHEEL_RADIUS
-                vr = (_cmd_linear[0] + _cmd_angular[0] * WHEEL_BASE / 2.0) / WHEEL_RADIUS
+                # ★ 一次性快照，避免回调线程在两次读取之间修改值导致 lin/ang 错误配对
+                _lin = _cmd_linear[0]
+                _ang = _cmd_angular[0]
+                # 差速运动学：vl = (v - ω·d/2) / r，vr = (v + ω·d/2) / r
+                # ω>0(左转): 左轮慢、右轮快  ω<0(右转): 左轮快、右轮慢
+                vl = (_lin - _ang * WHEEL_BASE / 2.0) / WHEEL_RADIUS
+                vr = (_lin + _ang * WHEEL_BASE / 2.0) / WHEEL_RADIUS * RIGHT_WHEEL_SIGN
                 li, ri = _wheel_idx[0]
                 _art_ctrl[0].apply_action(ArticulationAction(
                     joint_velocities=np.array([vl, vr]),
@@ -664,7 +710,7 @@ def main():
                     joint_vels = _robot_art_holder[0].get_joint_velocities()
                     li, ri = _wheel_idx[0]
                     vl_a = float(joint_vels[li]) * WHEEL_RADIUS
-                    vr_a = float(joint_vels[ri]) * WHEEL_RADIUS
+                    vr_a = float(joint_vels[ri]) * WHEEL_RADIUS * RIGHT_WHEEL_SIGN  # 与命令侧同号
                     vx  = (vl_a + vr_a) / 2.0
                     wz  = (vr_a - vl_a) / WHEEL_BASE
 
@@ -698,6 +744,28 @@ def main():
             odom_msg.twist.twist.linear.x    = vx
             odom_msg.twist.twist.angular.z   = wz
             _odom_pub[0].publish(odom_msg)
+
+            # ── 6b. 发布 /state_estimation（map frame）──────────────────
+            # ★ 使用与 /odom 相同的 offset-corrected 坐标 (px, py, yaw_out)
+            # 原因：ground_truth 模式下 map→odom = identity，map 原点 = 机器人起始位置
+            #       NavFn 路径在 map frame（以起始位置为原点），local_planner 用此话题
+            #       对比路径坐标，必须同系。不能用 Isaac 世界绝对坐标（存在偏移）
+            # dualmap 中 FASTLIO /fastlio_odom 也是相对于 SLAM 起始点的坐标，与此一致
+            if _state_est_pub[0] is not None and use_physics:
+                se_msg = Odometry()
+                se_msg.header.stamp    = stamp
+                se_msg.header.frame_id = "map"
+                se_msg.child_frame_id  = "base_footprint"
+                se_msg.pose.pose.position.x    = _pos_x[0]   # offset-corrected，与 /odom 相同
+                se_msg.pose.pose.position.y    = _pos_y[0]
+                se_msg.pose.pose.position.z    = 0.0
+                se_msg.pose.pose.orientation.x = 0.0
+                se_msg.pose.pose.orientation.y = 0.0
+                se_msg.pose.pose.orientation.z = qz_out
+                se_msg.pose.pose.orientation.w = qw_out
+                se_msg.twist.twist.linear.x    = vx
+                se_msg.twist.twist.angular.z   = wz
+                _state_est_pub[0].publish(se_msg)
 
             # ── 7. 发布 TF odom → base_footprint ─────────────────────
             t = TransformStamped()
